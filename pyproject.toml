@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "knode-ai-analysis"
+version = "0.1.0"
+description = "KNode AI Code Analysis microservice"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "httpx",
+    "pydantic>=2",
+    "pydantic-settings",
+    "python-dotenv",
+    "structlog",
+    "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "httpx",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
