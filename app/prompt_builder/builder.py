@@ -6,6 +6,8 @@ from app.models.domain import LLMPrompt, NormalizedSubmission, RuleEngineOutcome
 
 logger = get_logger(__name__)
 
+SOURCE_TRUNCATION_MARKER = "\n... [source truncated for length] ..."
+
 SYSTEM_PROMPT = """You are a patient coding mentor for a learner.
 Never provide a full corrected solution or working code that solves the problem.
 Explain the mistake conceptually and give a nudge or hint, not the answer.
@@ -45,6 +47,7 @@ def _compose_user_prompt(
     rule_outcome: RuleEngineOutcome,
     include_case_stdin: bool,
     include_stderr: bool,
+    source_code: str | None = None,
 ) -> str:
     """Compose the user prompt with optional non-essential sections."""
 
@@ -52,7 +55,7 @@ def _compose_user_prompt(
         f"Language: {sub.language}",
         f"Verdict: {sub.verdict}",
         "Submitted source code:",
-        sub.source_code,
+        source_code if source_code is not None else sub.source_code,
         "Test summary:",
         (
             f"total_test_cases={sub.test_summary.total_test_cases}, "
@@ -82,6 +85,52 @@ def _compose_user_prompt(
     return "\n\n".join(parts)
 
 
+def _fits_budget(prompt: str, max_chars: int) -> bool:
+    """Return whether the complete prompt fits within the configured budget."""
+
+    return len(SYSTEM_PROMPT) + len(prompt) <= max_chars
+
+
+def _compose_with_truncated_source(
+    sub: NormalizedSubmission,
+    rule_outcome: RuleEngineOutcome,
+    max_chars: int,
+) -> str:
+    """Compose a prompt that fits by truncating source code as the final fallback."""
+
+    low = 0
+    high = len(sub.source_code)
+    best_prompt = _compose_user_prompt(
+        sub,
+        rule_outcome,
+        include_case_stdin=False,
+        include_stderr=False,
+        source_code=SOURCE_TRUNCATION_MARKER,
+    )
+
+    while low <= high:
+        mid = (low + high) // 2
+        truncated_source = sub.source_code[:mid] + SOURCE_TRUNCATION_MARKER
+        prompt = _compose_user_prompt(
+            sub,
+            rule_outcome,
+            include_case_stdin=False,
+            include_stderr=False,
+            source_code=truncated_source,
+        )
+        if _fits_budget(prompt, max_chars):
+            best_prompt = prompt
+            low = mid + 1
+        else:
+            high = mid - 1
+
+    if not _fits_budget(best_prompt, max_chars):
+        user_budget = max(0, max_chars - len(SYSTEM_PROMPT))
+        return best_prompt[:user_budget]
+
+    return best_prompt
+
+
 def build_prompt(
     sub: NormalizedSubmission,
     rule_outcome: RuleEngineOutcome,
@@ -96,7 +145,7 @@ def build_prompt(
         include_stderr=True,
     )
 
-    if len(SYSTEM_PROMPT) + len(prompt) <= settings.prompt_max_chars:
+    if _fits_budget(prompt, settings.prompt_max_chars):
         return LLMPrompt(system=SYSTEM_PROMPT, user=prompt)
 
     prompt = _compose_user_prompt(
@@ -105,7 +154,7 @@ def build_prompt(
         include_case_stdin=False,
         include_stderr=True,
     )
-    if len(SYSTEM_PROMPT) + len(prompt) <= settings.prompt_max_chars:
+    if _fits_budget(prompt, settings.prompt_max_chars):
         logger.warning("prompt truncated sample failed case stdin")
         return LLMPrompt(system=SYSTEM_PROMPT, user=prompt)
 
@@ -115,9 +164,14 @@ def build_prompt(
         include_case_stdin=False,
         include_stderr=False,
     )
-    if len(SYSTEM_PROMPT) + len(prompt) > settings.prompt_max_chars:
-        logger.warning("prompt remains over budget after non-essential truncation")
-    else:
+    if _fits_budget(prompt, settings.prompt_max_chars):
         logger.warning("prompt truncated stderr and compile output")
+        return LLMPrompt(system=SYSTEM_PROMPT, user=prompt)
 
+    prompt = _compose_with_truncated_source(
+        sub,
+        rule_outcome,
+        settings.prompt_max_chars,
+    )
+    logger.warning("prompt truncated source_code as last resort")
     return LLMPrompt(system=SYSTEM_PROMPT, user=prompt)

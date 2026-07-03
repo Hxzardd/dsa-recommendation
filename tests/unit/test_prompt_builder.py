@@ -1,5 +1,6 @@
 """Prompt builder tests."""
 
+import logging
 from types import SimpleNamespace
 
 from app.models.request_schemas import AnalyzeRequest
@@ -111,3 +112,56 @@ def test_truncation_preserves_source_over_sample_stdin(monkeypatch) -> None:
     assert source_code in prompt.user
     assert large_stdin not in prompt.user
     assert len(prompt.system) + len(prompt.user) <= 1800
+
+
+def test_truncates_source_code_as_last_resort(monkeypatch) -> None:
+    """Oversized source code is truncated when non-essential output is already absent."""
+
+    source_code = "print('x')\n" * 1000
+    max_chars = len(builder.SYSTEM_PROMPT) + 700
+    payload = VALID_WRONG_ANSWER_PAYLOAD | {
+        "source_code": source_code,
+        "stdout": "",
+        "stderr": "",
+        "compile_output": "",
+        "sample_failed_cases": [],
+    }
+    request = AnalyzeRequest.model_validate(payload)
+    submission = normalize(request)
+    outcome = run_rules(submission)
+    monkeypatch.setattr(
+        builder,
+        "get_settings",
+        lambda: SimpleNamespace(prompt_max_chars=max_chars),
+    )
+
+    prompt = build_prompt(submission, outcome)
+
+    assert len(prompt.system) + len(prompt.user) <= max_chars
+    assert builder.SOURCE_TRUNCATION_MARKER in prompt.user
+
+
+def test_normal_sized_prompt_is_unmodified_without_warning(monkeypatch, caplog) -> None:
+    """Prompt builder does not truncate or warn when the prompt starts under budget."""
+
+    request = AnalyzeRequest.model_validate(VALID_WRONG_ANSWER_PAYLOAD)
+    submission = normalize(request)
+    outcome = run_rules(submission)
+    original_prompt = builder._compose_user_prompt(
+        submission,
+        outcome,
+        include_case_stdin=True,
+        include_stderr=True,
+    )
+    monkeypatch.setattr(
+        builder,
+        "get_settings",
+        lambda: SimpleNamespace(prompt_max_chars=10_000),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        prompt = build_prompt(submission, outcome)
+
+    assert prompt.user == original_prompt
+    assert builder.SOURCE_TRUNCATION_MARKER not in prompt.user
+    assert not caplog.records
