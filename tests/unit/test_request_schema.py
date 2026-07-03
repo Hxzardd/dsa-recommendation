@@ -1,7 +1,7 @@
 """AnalyzeRequest schema tests."""
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.config.settings import get_settings
 from app.models.request_schemas import AnalyzeRequest
@@ -12,10 +12,14 @@ def test_valid_payload_parses() -> None:
     """The canonical backend payload parses without losing fields."""
 
     request = AnalyzeRequest.model_validate(VALID_WRONG_ANSWER_PAYLOAD)
+    expected_submitted_at = TypeAdapter(AnalyzeRequest.model_fields["submitted_at"].annotation)
+    expected_datetime = expected_submitted_at.validate_python(
+        VALID_WRONG_ANSWER_PAYLOAD["submitted_at"],
+    )
 
     assert request.submission_id == VALID_WRONG_ANSWER_PAYLOAD["submission_id"]
-    assert request.verdict == "wrong_answer"
-    assert request.submitted_at.isoformat().startswith("2026-06-30T18:04:11")
+    assert request.verdict == VALID_WRONG_ANSWER_PAYLOAD["verdict"]
+    assert request.submitted_at == expected_datetime
     assert request.model_dump(mode="json").keys() == VALID_WRONG_ANSWER_PAYLOAD.keys()
 
 
@@ -46,4 +50,3 @@ def test_missing_required_field_rejected() -> None:
 
     with pytest.raises(ValidationError):
         AnalyzeRequest.model_validate(payload)
-

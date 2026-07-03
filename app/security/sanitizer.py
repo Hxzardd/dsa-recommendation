@@ -18,13 +18,17 @@ def validate_input_safety(request: AnalyzeRequest) -> None:
 
     text_fields = {
         "source_code": request.source_code,
-        "stdin": request.stdin,
-        "expected_output": request.expected_output,
-        "actual_output": request.actual_output,
         "stdout": request.stdout,
         "stderr": request.stderr,
         "compile_output": request.compile_output,
     }
+    for index, failed_case in enumerate(request.sample_failed_cases, start=1):
+        text_fields[f"sample_failed_cases[{index}].stdin"] = failed_case.stdin
+        text_fields[f"sample_failed_cases[{index}].expected_output"] = (
+            failed_case.expected_output
+        )
+        text_fields[f"sample_failed_cases[{index}].actual_output"] = failed_case.actual_output
+
     for field_name, value in text_fields.items():
         if "\x00" in value:
             msg = f"{field_name} contains a null byte"
@@ -37,4 +41,3 @@ def scrub_llm_output(text: str, source_code: str) -> str:
     _ = source_code
     # TODO Phase 3: detect and withhold likely solution leaks.
     return text
-
