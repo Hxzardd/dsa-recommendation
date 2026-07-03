@@ -1,10 +1,39 @@
 """Internal domain models shared between pipeline stages."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
-from app.models.request_schemas import Verdict
+from app.models.request_schemas import SampleFailedCase, TestSummary, Verdict
+
+
+class RuleResult(BaseModel):
+    """Result returned by one deterministic rule."""
+
+    matched: bool
+    error_category: str | None = None
+    deterministic_feedback: str | None = None
+    deterministic_hint: str | None = None
+    confidence: Literal["high", "medium", "low"]
+    note: str
+
+
+class RuleEngineOutcome(BaseModel):
+    """Aggregated result of deterministic rule execution."""
+
+    needs_llm: bool
+    error_category: str | None = None
+    deterministic_feedback: str | None = None
+    deterministic_hint: str | None = None
+    rule_notes: list[str]
+
+
+class LLMPrompt(BaseModel):
+    """Prompt parts sent to an LLM provider in later phases."""
+
+    system: str
+    user: str
 
 
 class NormalizedSubmission(BaseModel):
@@ -19,9 +48,8 @@ class NormalizedSubmission(BaseModel):
     language: str
     verdict: Verdict
     source_code: str
-    stdin: str
-    expected_output: str
-    actual_output: str
+    test_summary: TestSummary
+    sample_failed_cases: list[SampleFailedCase]
     stdout: str
     stderr: str
     compile_output: str
@@ -31,4 +59,3 @@ class NormalizedSubmission(BaseModel):
     normalized_stderr: str | None = None
     output_diff_summary: str | None = None
     is_deterministic_case: bool = False
-
