@@ -12,7 +12,7 @@ environment variable, so dev/prod or a teammate's box need zero code edits.
 
 Resolution order for the embedded parquet, in order of preference:
     1. $RGCN_INPUT_PARQUET                (explicit override)
-    2. $PROJECT_ROOT/vector_pool/vector_pool_embedded.parquet
+    2. $PROJECT_ROOT/data/vector_pool/vector_pool_embedded.parquet
 """
 
 from __future__ import annotations
