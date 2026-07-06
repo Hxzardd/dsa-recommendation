@@ -276,3 +276,37 @@ class TestRegistry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestColdStartFallback(unittest.TestCase):
+    """
+    Regression test for a real bug: CoursePathPool's and NoveltyPool's
+    cold-start branches used to read graph.concept_edges / mastered
+    concepts to build their fallback list -- which is exactly what's
+    EMPTY for a genuinely brand-new user, so both pools silently
+    returned zero candidates for every new signup.
+    """
+
+    def test_course_path_returns_candidates_for_totally_cold_user(self):
+        problems = [
+            _Pt("arrays_0", ["arrays"], 0.2),
+            _Pt("strings_0", ["strings"], 0.2),
+        ]
+        pool = CoursePathPool(qdrant=FakeQdrant(problems))
+        graph = _graph()   # zero concepts, zero cc_edges, zero solved
+        cands = pool.generate(graph, _StubState(None, graph), n=10)
+        self.assertGreater(len(cands), 0,
+                           "CoursePathPool returned nothing for a cold-start "
+                           "user -- starter concept fallback is broken")
+
+    def test_novelty_returns_candidates_for_totally_cold_user(self):
+        problems = [
+            _Pt("arrays_0", ["arrays"], 0.2),
+            _Pt("strings_0", ["strings"], 0.2),
+        ]
+        pool = NoveltyPool(qdrant=FakeQdrant(problems))
+        graph = _graph()
+        cands = pool.generate(graph, _StubState(None, graph), n=10)
+        self.assertGreater(len(cands), 0,
+                           "NoveltyPool returned nothing for a cold-start "
+                           "user -- starter concept fallback is broken")

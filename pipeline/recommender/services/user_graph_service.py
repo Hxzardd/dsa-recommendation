@@ -145,6 +145,25 @@ class UserGraphService:
         self._to_cache(user_id, graph)
         return graph
 
+    def new_user_graph(self, user_id: str, username: str = "") -> UserGraph:
+        """
+        Explicit new-user path -- matches the "no pre-req -> candidate
+        generation (new user)" branch of the architecture diagram: a single
+        user node with base ELO/SM2/BKT defaults and no concept/problem
+        edges, no DB round trip needed since a brand new signup has nothing
+        in Submission/UserTopicMastery/RecommendationLog/ConceptGapProfile
+        yet anyway.
+
+        Call this right after signup (before the first submission exists)
+        instead of get(), which would otherwise issue five queries that are
+        guaranteed to return zero rows for a user with no history. Once the
+        user has any telemetry, use get()/invalidate() as normal -- this
+        method is only for the very first graph a user ever gets.
+        """
+        graph = UserGraph(user=UserNode(user_id=user_id, username=username))
+        self._to_cache(user_id, graph)
+        return graph
+
     def invalidate(self, user_id: str) -> None:
         """Call this immediately after a new submission is processed."""
         if self._redis:

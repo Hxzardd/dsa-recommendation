@@ -202,8 +202,74 @@ class UserGraph:
             existing.severity      = max(existing.severity,      edge.severity)
             existing.urgency       = max(existing.urgency,       edge.urgency)
 
+    def update_concept_state(self, concept_slug: str, **fields) -> None:
+        """
+        Authoritative overwrite for a single concept's state, used by live
+        post-submission updates (StateUpdateService) where the new BKT/HLR
+        output IS the new truth for this topic -- not one of several
+        conflicting sources to conservatively merge.
+
+        This is deliberately NOT add_concept_edge(), which max-merges
+        mastery_score across multiple construction-time sources (DB rows,
+        BKT store, etc.) on the assumption that a lower value might just be
+        stale data from a source that hasn't caught up yet. That assumption
+        is wrong for a live update: if BKT computes a genuinely LOWER
+        mastery after a poor submission, add_concept_edge's max-merge would
+        silently keep the old higher value, making the graph never reflect
+        a real mastery decrease. update_concept_state always overwrites.
+
+        Usage: graph.update_concept_state("arrays", mastery_score=0.62,
+                                          urgency=0.3, half_life=5.0)
+        """
+        existing = self.concept_edges.get(concept_slug)
+        if existing is None:
+            self.concept_edges[concept_slug] = ConceptEdge(
+                concept_slug=concept_slug,
+                edge_type=fields.pop("edge_type", EdgeType.LEARNING),
+                **fields,
+            )
+            return
+        for key, value in fields.items():
+            setattr(existing, key, value)
+
     def add_cc_edge(self, edge: ConceptConceptEdge) -> None:
         self.cc_edges.setdefault(edge.source_slug, []).append(edge)
+        self._prereq_index_cache = None   # invalidate on any graph mutation
+
+    def is_locked(self, topic_tags: list, mastery_threshold: float = 0.7) -> bool:
+        """
+        True if ANY of the given topic tags requires a prerequisite concept
+        the user hasn't mastered yet. Single source of truth for prereq
+        gating -- both the candidate filtering layer and every pool's own
+        self-filter call this instead of each building their own reverse
+        index from cc_edges, so "locked" always means the same thing
+        everywhere in the pipeline.
+
+        cc_edges is keyed by source concept with PREREQ edges pointing to
+        the concept it unlocks (source is prerequisite OF target). The
+        reverse index built here maps target -> [required prereq slugs].
+        """
+        if not topic_tags:
+            return False
+        index = self._prereq_index()
+        mastered = set(self.mastered_concepts(mastery_threshold))
+        for tag in topic_tags:
+            for prereq_slug in index.get(tag, []):
+                if prereq_slug not in mastered:
+                    return True
+        return False
+
+    def _prereq_index(self) -> dict:
+        cache = getattr(self, "_prereq_index_cache", None)
+        if cache is not None:
+            return cache
+        reverse: dict = {}
+        for src, edges in self.cc_edges.items():
+            for e in edges:
+                if e.edge_type == EdgeType.PREREQ:
+                    reverse.setdefault(e.target_slug, []).append(src)
+        self._prereq_index_cache = reverse
+        return reverse
 
     # ------------------------------------------------------------------
     # Serialisation (compact dict for Redis)
