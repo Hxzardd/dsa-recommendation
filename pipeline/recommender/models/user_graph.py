@@ -280,6 +280,10 @@ class UserGraph:
             "user":           self.user.__dict__,
             "problem_edges":  {k: v.__dict__ for k, v in self.problem_edges.items()},
             "concept_edges":  {k: v.__dict__ for k, v in self.concept_edges.items()},
+            "cc_edges":       {
+                k: [e.__dict__ for e in edges]
+                for k, edges in self.cc_edges.items()
+            },
             "solved_ids":     list(self.solved_ids),
             "exposed_ids":    self.exposed_ids,
             "deprioritised":  list(self.deprioritised_ids),
@@ -294,6 +298,12 @@ class UserGraph:
         }
         g.concept_edges = {
             k: ConceptEdge(**v) for k, v in d["concept_edges"].items()
+        }
+        # .get(..., {}) handles graphs cached BEFORE this fix -- they'll
+        # restore with empty cc_edges instead of raising KeyError.
+        g.cc_edges = {
+            k: [ConceptConceptEdge(**e) for e in edges]
+            for k, edges in d.get("cc_edges", {}).items()
         }
         g.solved_ids        = set(d["solved_ids"])
         g.exposed_ids       = d["exposed_ids"]

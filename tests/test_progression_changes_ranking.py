@@ -137,6 +137,22 @@ class FakeQdrant:
             points = sorted(self.problems, key=lambda p: p.score, reverse=True)[:limit]
         return R()
 
+    def retrieve(self, collection_name, ids, with_payload=True, with_vectors=False):
+        from pipeline.recommender.services.recommend import _stable_point_id
+
+        class _RetrievedPt:
+            def __init__(self, point_id, payload):
+                self.id = point_id
+                self.payload = payload
+
+        by_point_id = {_stable_point_id(p.id): p for p in self.problems}
+        out = []
+        for point_id in ids:
+            p = by_point_id.get(point_id)
+            if p is not None:
+                out.append(_RetrievedPt(point_id, p.payload))
+        return out
+
 
 class FakeRedis:
     """
@@ -221,6 +237,13 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
             user_id, db=None, redis=self.redis, qdrant=self.qdrant,
             bkt_store=self.bkt_store, hlr_store=self.hlr_store, k=10)
 
+    def _get_graph_or_new(self, user_id):
+        """Mirrors recommend.py's _get_graph() fallback for tests that need direct graph access."""
+        try:
+            return self.graph_service.get(user_id)
+        except (ValueError, AttributeError):
+            return self.graph_service.new_user_graph(user_id)
+
     def test_recommendations_differ_before_and_after_progress(self):
         before = self._recommend("progressing_user")
         before_ids = _rec_ids(before)
@@ -252,34 +275,47 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
         self.assertEqual(overlap, set(),
                          f"Already-solved problems reappeared in recommendations: {overlap}")
 
-    def test_cold_start_flag_clears_after_progress(self):
-        before = self._recommend("progressing_user")
-        self.assertTrue(before.is_cold_start)
+    def test_cold_start_clears_after_progress(self):
+        """
+        is_cold_start is no longer part of the returned API payload
+        (internal detail, stripped per the backend-schema-only output
+        redesign) -- check the underlying state vector directly instead,
+        which is what the API's internal cold-start determination is
+        based on.
+        """
+        from pipeline.recommender.models.user_state import UserStateBuilder
+
+        graph_before = self._get_graph_or_new("progressing_user")
+        state_before = UserStateBuilder(qdrant_client=self.qdrant).build(graph_before)
+        self.assertTrue(state_before.is_cold_start)
 
         for i in range(3):
             self.state_service.process_submission(
                 "progressing_user", _submission(f"arrays_{i}", verdict="OK", score=0.9))
 
-        after = self._recommend("progressing_user")
-        # is_cold_start reflects whether a vector could be built -- after
-        # real submissions exist, this should no longer report cold start
-        self.assertFalse(after.is_cold_start)
+        graph_after = self._get_graph_or_new("progressing_user")
+        state_after = UserStateBuilder(qdrant_client=self.qdrant).build(graph_after)
+        self.assertFalse(state_after.is_cold_start)
 
-    def test_difficulty_plan_level_can_change_with_mastery(self):
-        before = self._recommend("progressing_user")
-        self.assertEqual(before.difficulty_plan["level"], "beginner")
+    def test_avg_mastery_increases_with_progress(self):
+        """
+        difficulty_plan is no longer part of the returned API payload
+        (internal detail) -- check the underlying difficulty controller's
+        plan directly instead, same computation the API used to expose.
+        """
+        from pipeline.recommender.services.adaptive_difficulty import AdaptiveDifficultyController
 
-        # heavy, consistently high-scoring submissions across many arrays
-        # problems should push average mastery up
+        graph_before = self._get_graph_or_new("progressing_user")
+        plan_before = AdaptiveDifficultyController().build_plan(graph_before)
+        self.assertEqual(plan_before.level, "beginner")
+
         for i in range(10):
             self.state_service.process_submission(
                 "progressing_user", _submission(f"arrays_{i}", verdict="OK", score=0.95))
 
-        after = self._recommend("progressing_user")
-        # level may move to "mid" once arrays mastery is high enough --
-        # at minimum, avg_mastery must have increased from 0
-        self.assertGreater(after.difficulty_plan["avg_mastery"],
-                          before.difficulty_plan["avg_mastery"])
+        graph_after = self._get_graph_or_new("progressing_user")
+        plan_after = AdaptiveDifficultyController().build_plan(graph_after)
+        self.assertGreater(plan_after.avg_mastery, plan_before.avg_mastery)
 
 
 class TestDifferentUsersDiverge(unittest.TestCase):

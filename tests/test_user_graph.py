@@ -436,16 +436,28 @@ class TestGraphAssembly(unittest.TestCase):
         # cleanup
         svc_mod._PREREQ_CACHE.clear()
 
-    def test_cc_edges_not_loaded_for_untouched_concepts(self):
+    def test_cc_edges_loaded_for_untouched_concepts_too(self):
+        """
+        Regression test for a real bug (flagged by Greptile): _load_cc_edges
+        used to only attach edges whose SOURCE was already a concept the
+        user had touched. That meant a prerequisite like arrays->dp was
+        invisible to is_locked() whenever the user hadn't touched "arrays"
+        yet -- exactly the case prerequisite gating exists to catch, since
+        "locked" by definition means a concept the user hasn't engaged with.
+        Fixed: the full offline prerequisite graph is loaded every time,
+        regardless of what the user has touched.
+        """
         import pipeline.recommender.services.user_graph_service as svc_mod
         svc_mod._PREREQ_CACHE["graphs"] = [
             ConceptConceptEdge("graphs", "trees", EdgeType.PREREQ, 1.0)
         ]
-        # user has no mastery on "graphs"
+        # user has no mastery on "graphs" at all
         g = self._build(mastery_rows=[
             _mastery_row("arrays", mastery_score=75.0),
         ])
-        self.assertNotIn("graphs", g.cc_edges)
+        self.assertIn("graphs", g.cc_edges)
+        # and the lock check must actually see it
+        self.assertTrue(g.is_locked(["trees"]))
         svc_mod._PREREQ_CACHE.clear()
 
     # ------------------------------------------------------------------
@@ -495,6 +507,10 @@ class TestSerialization(unittest.TestCase):
             concept_slug="arrays", edge_type=EdgeType.MASTERED,
             mastery_score=0.8, confidence=0.66, half_life=7.0,
         ))
+        g.add_cc_edge(ConceptConceptEdge(
+            source_slug="arrays", target_slug="dp",
+            edge_type=EdgeType.PREREQ, weight=1.0,
+        ))
         return g
 
     def test_roundtrip_preserves_user(self):
@@ -517,6 +533,49 @@ class TestSerialization(unittest.TestCase):
         self.assertAlmostEqual(g2.concept_edges["arrays"].mastery_score, 0.8)
         self.assertAlmostEqual(g2.concept_edges["arrays"].confidence,    0.66)
         self.assertAlmostEqual(g2.concept_edges["arrays"].half_life,     7.0)
+
+    def test_roundtrip_preserves_cc_edges(self):
+        """
+        Regression test for a real Greptile-flagged bug: to_dict() never
+        included cc_edges at all, so any graph restored from the Redis
+        cache silently lost every prerequisite/cooccurrence edge -- after
+        the FIRST cache write, is_locked() had nothing to check against
+        and every candidate looked unlocked. Fixed: cc_edges is now
+        serialized and restored like every other field.
+        """
+        g = self._sample_graph()
+        g2 = UserGraph.from_dict(g.to_dict())
+        self.assertIn("arrays", g2.cc_edges)
+        self.assertEqual(g2.cc_edges["arrays"][0].target_slug, "dp")
+        self.assertEqual(g2.cc_edges["arrays"][0].edge_type, EdgeType.PREREQ)
+
+    def test_roundtrip_cc_edges_actually_drive_lock_check(self):
+        """
+        Same fix, verified through is_locked() specifically (not just that
+        the data survived serialization) -- uses a prerequisite that is
+        genuinely unmastered, unlike _sample_graph()'s "arrays" (mastered
+        at 0.8, used by the concept-edge round-trip test above).
+        """
+        g = UserGraph(user=UserNode(user_id=USER_ID))
+        g.add_concept_edge(ConceptEdge(
+            concept_slug="arrays", edge_type=EdgeType.LEARNING,
+            mastery_score=0.3,   # below the 0.7 mastered threshold
+        ))
+        g.add_cc_edge(ConceptConceptEdge(
+            source_slug="arrays", target_slug="dp",
+            edge_type=EdgeType.PREREQ, weight=1.0,
+        ))
+        g2 = UserGraph.from_dict(g.to_dict())
+        self.assertTrue(g2.is_locked(["dp"]))
+
+    def test_roundtrip_missing_cc_edges_key_defaults_empty(self):
+        """Graphs cached BEFORE this fix have no cc_edges key at all -- must
+        restore gracefully with empty cc_edges, not raise KeyError."""
+        g = self._sample_graph()
+        d = g.to_dict()
+        del d["cc_edges"]   # simulate a pre-fix cached graph
+        g2 = UserGraph.from_dict(d)
+        self.assertEqual(g2.cc_edges, {})
 
     def test_roundtrip_preserves_solved_ids(self):
         g = self._sample_graph()

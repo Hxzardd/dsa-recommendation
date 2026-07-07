@@ -117,18 +117,29 @@ class UserGraphService:
     """
     Builds and caches UserGraph instances.
 
+    Three-tier read path in get():
+        1. Redis (fast, 300s TTL)
+        2. Neo4j (durable, no TTL -- survives past Redis expiry and past
+           the end of any session, per the "store even after session ends"
+           requirement)
+        3. Rebuild from Postgres telemetry (always correct, slowest) --
+           writes through to BOTH Redis and Neo4j afterward so the next
+           read anywhere hits a fast/durable tier instead of rebuilding.
+
     Constructor args:
         db      : SQLAlchemy session (or any connection with .execute())
-        redis   : redis.Redis client (or None to skip caching)
+        redis   : redis.Redis client (or None to skip the fast cache)
+        neo4j   : Neo4jGraphStore instance (or None to skip durable storage)
         bkt     : Shraddha's BKT store dict {user_id: {topic: P(L)}}
         hlr     : Shraddha's HLR store dict {user_id: {topic: urgency}}
     """
 
-    CACHE_TTL = 300   # seconds
+    CACHE_TTL = 300   # seconds -- Redis tier only; Neo4j has no TTL
 
-    def __init__(self, db, redis=None, bkt: dict = None, hlr: dict = None):
+    def __init__(self, db, redis=None, neo4j=None, bkt: dict = None, hlr: dict = None):
         self._db    = db
         self._redis = redis
+        self._neo4j = neo4j
         self._bkt   = bkt or {}
         self._hlr   = hlr or {}
 
@@ -137,12 +148,21 @@ class UserGraphService:
     # ------------------------------------------------------------------
 
     def get(self, user_id: str) -> UserGraph:
-        """Return a UserGraph for user_id.  Hits Redis cache first."""
+        """Return a UserGraph for user_id. Redis -> Neo4j -> Postgres rebuild, in that order."""
         cached = self._from_cache(user_id)
         if cached is not None:
             return cached
+
+        if self._neo4j is not None:
+            durable = self._neo4j.load(user_id)
+            if durable is not None:
+                self._to_cache(user_id, durable)   # refresh the fast tier
+                return durable
+
         graph = self._build(user_id)
         self._to_cache(user_id, graph)
+        if self._neo4j is not None:
+            self._neo4j.save(graph)
         return graph
 
     def new_user_graph(self, user_id: str, username: str = "") -> UserGraph:
@@ -162,15 +182,38 @@ class UserGraphService:
         """
         graph = UserGraph(user=UserNode(user_id=user_id, username=username))
         self._to_cache(user_id, graph)
+        if self._neo4j is not None:
+            self._neo4j.save(graph)
         return graph
 
     def invalidate(self, user_id: str) -> None:
-        """Call this immediately after a new submission is processed."""
+        """
+        Call this immediately after a new submission is processed.
+
+        Only clears the Redis (fast) tier -- forcing the NEXT get() to
+        rebuild from fresh Postgres telemetry. Does NOT delete from Neo4j;
+        that rebuild's write-through in get() overwrites (MERGE, not
+        delete+recreate) the durable copy with the fresh data instead,
+        so Neo4j always converges to the latest state without ever going
+        empty in between. Use delete_user() explicitly for account
+        deletion / GDPR-style removal, which is a different operation
+        from routine invalidation.
+        """
         if self._redis:
             try:
                 self._redis.delete(f"user_graph:{user_id}")
             except Exception as exc:
                 log.warning("Redis invalidate failed: %s", exc)
+
+    def delete_user(self, user_id: str) -> None:
+        """Removes the user's graph from every tier -- Redis, Neo4j, and (implicitly) any future rebuild is unaffected since Postgres rows are untouched here."""
+        if self._redis:
+            try:
+                self._redis.delete(f"user_graph:{user_id}")
+            except Exception as exc:
+                log.warning("Redis delete failed: %s", exc)
+        if self._neo4j is not None:
+            self._neo4j.delete(user_id)
 
     # ------------------------------------------------------------------
     # Build from Postgres telemetry
@@ -393,12 +436,27 @@ class UserGraphService:
 
     def _load_cc_edges(self, graph: UserGraph) -> None:
         """
-        Attach offline concept-concept edges for concepts the user
-        has interacted with.  Keeps the graph small (only user-relevant
-        subgraph, not the full 465-concept graph).
+        Attach the FULL offline concept-concept (prerequisite/cooccurrence)
+        graph -- not just edges sourced from concepts the user has already
+        touched.
+
+        The previous version only loaded edges where source_slug was
+        already a key in graph.concept_edges. But is_locked() needs to
+        look up prerequisites for CANDIDATE target concepts, which the
+        user has, by definition, often never touched yet -- that is
+        exactly what "locked" means. Filtering by user-touched concepts
+        silently dropped precisely the edges prerequisite gating depends
+        on, letting locked candidates pass filtering as if unlocked.
+
+        _PREREQ_CACHE is the full offline prerequisite graph (~465
+        concepts), already loaded into memory once at process startup --
+        copying all of it into every user's graph costs nothing extra
+        and is the only way to guarantee is_locked() has complete data
+        for any candidate, not just ones the user happens to have a
+        ConceptEdge for already.
         """
-        for slug in list(graph.concept_edges.keys()):
-            for cc_edge in _PREREQ_CACHE.get(slug, []):
+        for edges in _PREREQ_CACHE.values():
+            for cc_edge in edges:
                 graph.add_cc_edge(cc_edge)
 
     # ------------------------------------------------------------------

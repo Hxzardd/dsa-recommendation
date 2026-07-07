@@ -113,13 +113,27 @@ class TestNoOfflinePipelineCalls(unittest.TestCase):
 class _Pt:
     def __init__(self, pid, tags, diff, score=0.9):
         self.id = pid
-        self.payload = {"problem_id": pid, "topic_tags": tags, "difficulty_score": diff}
+        self.payload = {
+            "problem_id": pid, "topic_tags": tags, "difficulty_score": diff,
+            "title": f"Title for {pid}", "title_slug": pid.replace("_", "-"),
+        }
         self.score = score
+
+
+def _stable_point_id(problem_id: str) -> int:
+    """Matches recommend.py's _stable_point_id exactly, so FakeQdrant.retrieve() resolves correctly."""
+    try:
+        import xxhash
+        return xxhash.xxh64(problem_id).intdigest() & 0x7FFF_FFFF_FFFF_FFFF
+    except ImportError:
+        import hashlib
+        return int(hashlib.sha256(problem_id.encode()).hexdigest(), 16) & 0x7FFF_FFFF_FFFF_FFFF
 
 
 class FakeQdrant:
     def __init__(self, problems):
         self.problems = problems
+        self._by_point_id = {_stable_point_id(p.id): p for p in problems}
 
     def scroll(self, collection_name, scroll_filter=None, limit=10,
                with_payload=True, with_vectors=False):
@@ -152,6 +166,16 @@ class FakeQdrant:
         class R:
             points = sorted(self.problems, key=lambda p: p.score, reverse=True)[:limit]
         return R()
+
+    def retrieve(self, collection_name, ids, with_payload=True, with_vectors=False):
+        out = []
+        for point_id in ids:
+            p = self._by_point_id.get(point_id)
+            if p is not None:
+                fake = _Pt(p.id, p.payload["topic_tags"], p.payload["difficulty_score"])
+                fake.id = point_id   # retrieve() results carry the Qdrant point ID, not the raw problem_id
+                out.append(fake)
+        return out
 
 
 def _problems(n_per_topic=15):
@@ -210,9 +234,16 @@ class TestNewUserPath(unittest.TestCase):
         result = get_recommendations("brand_new", db=None, qdrant=FakeQdrant(_problems()))
         self.assertIsInstance(result, RecommendationResult)
 
-    def test_new_user_flagged_cold_start(self):
+    def test_new_user_returns_empty_or_starter_recommendations(self):
+        """
+        is_cold_start is no longer part of the returned payload (internal
+        detail, stripped per the backend-schema-only output). A brand new
+        user should still get a valid result object -- possibly with
+        starter-concept recommendations, possibly empty depending on the
+        fixture's catalog -- without raising.
+        """
         result = get_recommendations("brand_new", db=None, qdrant=FakeQdrant(_problems()))
-        self.assertTrue(result.is_cold_start)
+        self.assertIsInstance(result.recommendations, list)
 
     def test_new_user_does_not_crash_with_no_qdrant_either(self):
         result = get_recommendations("brand_new", db=None, qdrant=None)
@@ -235,11 +266,21 @@ class TestWarmUserPath(unittest.TestCase):
                                      bkt_store={}, hlr_store={}, k=5)
         self.assertLessEqual(len(result.recommendations), 5)
 
-    def test_difficulty_plan_attached(self):
+    def test_recommendations_match_backend_schema(self):
+        """
+        difficulty_plan/filter_report/rank_components etc are no longer
+        part of the returned payload -- those were internal scoring detail
+        that leaked into the response shape. Each recommendation must now
+        contain EXACTLY the backend's fields: problem_id, title, title_slug,
+        difficulty_score, topic_tags, source, recommended_at.
+        """
         db = _make_fake_db()
         qdrant = FakeQdrant(_problems())
         result = get_recommendations("u1", db=db, qdrant=qdrant, bkt_store={}, hlr_store={})
-        self.assertIn("level", result.difficulty_plan)
+        expected_keys = {"problem_id", "title", "title_slug", "difficulty_score",
+                         "topic_tags", "source", "recommended_at"}
+        for rec in result.recommendations:
+            self.assertEqual(set(rec.keys()), expected_keys)
 
     def test_candidate_set_staged(self):
         store = InMemoryCandidateStore()
@@ -251,12 +292,22 @@ class TestWarmUserPath(unittest.TestCase):
         staged = store.get(result.candidate_set_id)
         self.assertIsNotNone(staged)
 
-    def test_recommendations_have_rank_score(self):
+    def test_recommendations_have_valid_source(self):
+        """source must be one of the backend's 5 RecommendationLog enum values."""
+        db = _make_fake_db()
+        qdrant = FakeQdrant(_problems())
+        result = get_recommendations("u1", db=db, qdrant=qdrant, bkt_store={}, hlr_store={})
+        valid_sources = {"graph_walk", "vector_similarity", "revision", "sm2_review", "course_path"}
+        for rec in result.recommendations:
+            self.assertIn(rec["source"], valid_sources)
+
+    def test_recommendations_have_resolved_titles(self):
         db = _make_fake_db()
         qdrant = FakeQdrant(_problems())
         result = get_recommendations("u1", db=db, qdrant=qdrant, bkt_store={}, hlr_store={})
         for rec in result.recommendations:
-            self.assertIn("rank_score", rec)
+            self.assertIsNotNone(rec["title"])
+            self.assertTrue(rec["title"].startswith("Title for"))
 
     def test_default_k_is_ten(self):
         db = _make_fake_db()
@@ -264,18 +315,25 @@ class TestWarmUserPath(unittest.TestCase):
         result = get_recommendations("u1", db=db, qdrant=qdrant, bkt_store={}, hlr_store={})
         self.assertLessEqual(len(result.recommendations), 10)
 
-    def test_pool_cap_respected_in_final_slate(self):
+    def test_max_per_pool_cap_still_takes_effect(self):
+        """
+        pool_sources is no longer part of the output (internal-only, per
+        the schema redesign), so pool-level cap enforcement can't be
+        observed from the response anymore -- that's covered directly by
+        test_diversity_mixer.py's unit tests instead. This just confirms
+        passing max_per_pool doesn't break the call and still returns a
+        valid, schema-correct result.
+        """
         db = _make_fake_db()
         qdrant = FakeQdrant(_problems())
         result = get_recommendations("u1", db=db, qdrant=qdrant,
                                      bkt_store={}, hlr_store={},
                                      k=10, max_per_pool=2)
-        pool_counts = {}
+        self.assertLessEqual(len(result.recommendations), 10)
         for rec in result.recommendations:
-            for p in rec.get("pool_sources", []):
-                pool_counts[p] = pool_counts.get(p, 0) + 1
-        for count in pool_counts.values():
-            self.assertLessEqual(count, 2)
+            self.assertIn(rec["source"],
+                         {"graph_walk", "vector_similarity", "revision",
+                          "sm2_review", "course_path"})
 
 
 class TestExternalRelevanceOverride(unittest.TestCase):
