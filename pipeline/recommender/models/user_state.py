@@ -151,8 +151,18 @@ class UserStateBuilder:
     # ------------------------------------------------------------------
 
     def build(self, graph: UserGraph) -> UserStateVector:
-        n_solved   = sum(1 for e in graph.problem_edges.values()
-                         if e.edge_type == EdgeType.SOLVED)
+        # n_solved must come from solved_ids, NOT from counting
+        # problem_edges currently marked SOLVED. add_problem_edge() keeps
+        # only the MOST RECENT edge per problem (overwrites on newer
+        # timestamp), while solved_ids is a monotonic add that never
+        # removes an entry once a problem is solved. If a user solves p1
+        # and later fails a resubmission on p1, problem_edges[p1] flips to
+        # ATTEMPTED (the newer edge), but solved_ids still correctly
+        # contains p1 -- counting via problem_edges silently dropped that
+        # solve, and after a few such cases a genuinely warm user could be
+        # misclassified as cold-start, skipping the problem-history vector
+        # blend entirely.
+        n_solved   = len(graph.solved_ids)
         is_cold    = n_solved < MIN_PROBLEMS
         elo        = graph.user.elo_rating or 1200
 

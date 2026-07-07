@@ -831,6 +831,35 @@ class TestUserStateVector(unittest.TestCase):
         s = b.build(g)
         self.assertEqual(len(s.solved_ids), 3)
 
+    def test_n_solved_uses_solved_ids_not_current_edge_type(self):
+        """
+        Regression test: n_solved was computed by counting problem_edges
+        currently marked SOLVED, but add_problem_edge() overwrites the
+        stored edge with the MOST RECENT submission's type. If a user
+        solves p1, then LATER fails a resubmission on p1, the stored edge
+        flips SOLVED -> ATTEMPTED even though the user genuinely solved it
+        once. solved_ids is a monotonic add that never removes an entry
+        once solved -- counting via problem_edges silently undercounted,
+        and after enough such cases a warm user could be misclassified as
+        cold-start, skipping the problem-history vector blend entirely.
+        """
+        g = UserGraph(user=UserNode(user_id=USER_ID, elo_rating=1200))
+        g.add_problem_edge(ProblemEdge("p1", EdgeType.SOLVED, normalised_score=0.9, timestamp=100.0))
+        g.add_problem_edge(ProblemEdge("p2", EdgeType.SOLVED, normalised_score=0.9, timestamp=101.0))
+        g.add_problem_edge(ProblemEdge("p3", EdgeType.SOLVED, normalised_score=0.9, timestamp=102.0))
+
+        # later failed resubmission on p1 -- overwrites the stored edge,
+        # but solved_ids must still remember p1 was solved
+        g.add_problem_edge(ProblemEdge("p1", EdgeType.ATTEMPTED, normalised_score=0.1, timestamp=200.0))
+
+        self.assertEqual(g.problem_edges["p1"].edge_type, EdgeType.ATTEMPTED)
+        self.assertIn("p1", g.solved_ids)
+
+        b = UserStateBuilder(self._qdrant_mock())
+        s = b.build(g)
+        self.assertEqual(s.n_solved, 3)
+        self.assertFalse(s.is_cold_start)
+
     def test_high_mastery_zero_urgency_gets_higher_weight_than_low_mastery(self):
         q = self._qdrant_mock()
         b = UserStateBuilder(q)
