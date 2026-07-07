@@ -345,3 +345,61 @@ class TestThreeTierReadPath(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestStateUpdatePersistsToNeo4j(unittest.TestCase):
+    """
+    Regression test for a real Greptile-flagged bug: StateUpdateService.
+    process_submission() used to write the mutated graph to Redis only
+    (via _to_cache), never to Neo4j. Once the 5-minute Redis entry
+    expired, the next get() fell through to Neo4j and returned the STALE
+    pre-submission graph -- silently dropping the just-solved problem and
+    mastery updates. Fixed via UserGraphService.persist(), which writes
+    to both tiers.
+    """
+
+    def test_submission_survives_redis_expiry_via_neo4j(self):
+        import time
+        from pipeline.recommender.services.state_update_service import StateUpdateService
+        import pipeline.recommender.bkt as bkt_module
+        import pipeline.recommender.hlr as hlr_module
+
+        redis = FakeRedis()
+        neo4j = Neo4jGraphStore(driver=FakeDriver())
+        graph_service = UserGraphService(db=None, redis=redis, neo4j=neo4j)
+        state_service = StateUpdateService(graph_service, qdrant=None, bkt_store={}, hlr_store={})
+
+        original_bkt_map = dict(bkt_module.problem_to_topics)
+        original_hlr_map = dict(hlr_module.problem_to_topics)
+        bkt_module.problem_to_topics = {"arrays_0": ["arrays"]}
+        hlr_module.problem_to_topics = {"arrays_0": ["arrays"]}
+        try:
+            submission = {
+                "problemId": "arrays_0", "verdict": "OK", "hintsUsed": 0,
+                "submissionCount": 1, "normalisedScore": 0.9,
+                "testCasesPassed": 10, "totalTestCases": 10,
+                "timestamp": time.time(),
+            }
+            state_service.process_submission("u1", submission, rebuild_vector=False)
+
+            # simulate the Redis TTL expiring
+            redis.delete("user_graph:u1")
+
+            # the next read must fall through to Neo4j and find the FRESH
+            # post-submission data, not a stale pre-submission graph
+            fresh = graph_service.get("u1")
+            self.assertIn("arrays_0", fresh.problem_edges)
+        finally:
+            bkt_module.problem_to_topics = original_bkt_map
+            hlr_module.problem_to_topics = original_hlr_map
+
+    def test_persist_writes_to_both_tiers(self):
+        redis = FakeRedis()
+        neo4j = Neo4jGraphStore(driver=FakeDriver())
+        svc = UserGraphService(db=None, redis=redis, neo4j=neo4j)
+
+        g = _sample_graph("u2")
+        svc.persist("u2", g)
+
+        self.assertIsNotNone(redis.get("user_graph:u2"))
+        self.assertIsNotNone(neo4j.load("u2"))

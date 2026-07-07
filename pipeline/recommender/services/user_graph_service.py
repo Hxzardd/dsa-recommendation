@@ -188,22 +188,39 @@ class UserGraphService:
 
     def invalidate(self, user_id: str) -> None:
         """
-        Call this immediately after a new submission is processed.
+        Call this immediately after a new submission is processed, BEFORE
+        persist() below -- clears the Redis (fast) tier first so a partial
+        persist() failure never leaves a stale Redis entry behind.
 
-        Only clears the Redis (fast) tier -- forcing the NEXT get() to
-        rebuild from fresh Postgres telemetry. Does NOT delete from Neo4j;
-        that rebuild's write-through in get() overwrites (MERGE, not
-        delete+recreate) the durable copy with the fresh data instead,
-        so Neo4j always converges to the latest state without ever going
-        empty in between. Use delete_user() explicitly for account
-        deletion / GDPR-style removal, which is a different operation
-        from routine invalidation.
+        Does NOT touch Neo4j -- persist() (or get()'s own rebuild path)
+        is what writes the fresh copy there, using MERGE so Neo4j never
+        goes empty in between.
         """
         if self._redis:
             try:
                 self._redis.delete(f"user_graph:{user_id}")
             except Exception as exc:
                 log.warning("Redis invalidate failed: %s", exc)
+
+    def persist(self, user_id: str, graph: UserGraph) -> None:
+        """
+        Write-through to BOTH tiers for an already-mutated graph.
+
+        get()/new_user_graph() write-through internally after a rebuild --
+        but a caller like StateUpdateService.process_submission() mutates
+        its OWN already-fetched graph object directly (adds a ProblemEdge,
+        updates ConceptEdges from fresh BKT/HLR output) without going
+        through get()'s rebuild path at all. Without this method, such a
+        caller could only reach the "private" _to_cache() (Redis only),
+        silently never writing the update to Neo4j -- meaning the fresh
+        mastery/problem data would vanish the moment the 5-minute Redis
+        entry expired, and the next read would fall through to Neo4j and
+        find the STALE pre-submission graph. persist() is the one call
+        that keeps both tiers correctly in sync after a direct mutation.
+        """
+        self._to_cache(user_id, graph)
+        if self._neo4j is not None:
+            self._neo4j.save(graph)
 
     def delete_user(self, user_id: str) -> None:
         """Removes the user's graph from every tier -- Redis, Neo4j, and (implicitly) any future rebuild is unaffected since Postgres rows are untouched here."""

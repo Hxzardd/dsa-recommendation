@@ -125,12 +125,19 @@ class StateUpdateService:
         updated_topics = self._apply_concept_updates(
             graph, bkt_results, hlr_results, updated_mastery, updated_hlr)
 
-        # 4. Invalidate cache -- next get() call rebuilds from fresh state,
-        # and re-cache the mutated graph immediately so a recommendation
-        # requested right after this submission doesn't have to wait for
-        # a full DB round trip to see the update.
+        # 4. Write-through the mutated graph to BOTH tiers. invalidate()
+        # first clears any stale Redis entry (defensive: if persist() then
+        # only partially succeeds, we haven't left old data behind);
+        # persist() writes the fresh graph to Redis AND Neo4j.
+        #
+        # This used to call _to_cache() directly (Redis only) -- with
+        # Neo4j enabled, that silently dropped every post-submission
+        # update from the durable tier: once the 5-minute Redis entry
+        # expired, the next get() would fall through to Neo4j and find
+        # the STALE pre-submission graph, losing the just-solved problem
+        # and mastery changes until some other path forced a full rebuild.
         self.graph_service.invalidate(user_id)
-        self.graph_service._to_cache(user_id, graph)
+        self.graph_service.persist(user_id, graph)
 
         # 5. Recompute the 1920-d vector so the caller can serve a
         # recommendation immediately with the fresh state.
