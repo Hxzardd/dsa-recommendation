@@ -21,7 +21,7 @@ import logging
 from fastapi import HTTPException
 from qdrant_client import QdrantClient
 
-from database.postgres.db import get_user_mastery, get_user_hlr
+from database.postgres.db import get_user_mastery, get_user_hlr, get_connection
 from pipeline.recommender.services.recommend import get_recommendations
 
 log = logging.getLogger(__name__)
@@ -32,6 +32,24 @@ log = logging.getLogger(__name__)
 
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "problems_full")
+
+# ---------------------------------------------------------------------------
+# DB Wrapper to adapt psycopg2 to SQLAlchemy interface used by UserGraphService
+# ---------------------------------------------------------------------------
+
+class DBWrapper:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def execute(self, query, params=None):
+        # Translate named parameters from SQLAlchemy style (:uid)
+        # to psycopg2 dict parameters style (%(uid)s)
+        if params:
+            for key in params.keys():
+                query = query.replace(f":{key}", f"%({key})s")
+        cur = self.conn.cursor()
+        cur.execute(query, params or {})
+        return cur
 
 # ---------------------------------------------------------------------------
 # Lazy Qdrant singleton — created on first request, not at import time
@@ -63,13 +81,16 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
     4. Return the result shaped to the backend's RecommendationLog schema.
     """
 
-    # --- Step 1: fetch user data from Postgres ---
+    # --- Step 1: fetch user data and connection from Postgres ---
     try:
         mastery = get_user_mastery(user_id)
         hlr = get_user_hlr(user_id)
+        conn = get_connection()
     except Exception as exc:
-        log.error("Postgres fetch failed for user %s: %s", user_id, exc)
+        log.error("Postgres connection or fetch failed for user %s: %s", user_id, exc)
         raise HTTPException(status_code=503, detail="Database unavailable")
+
+    db_wrapper = DBWrapper(conn)
 
     # --- Step 2: package for the pipeline ---
     # Pipeline expects: {user_id: {topic: value}}
@@ -81,7 +102,7 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
         qdrant = _get_qdrant()
         result = get_recommendations(
             user_id=user_id,
-            db=None,            # skip SQLAlchemy rebuild — data flows via stores
+            db=db_wrapper,      # Pass the adapter wrapper here
             redis=None,         # no Redis cache (Phase 2)
             neo4j=None,         # no Neo4j durable store (Phase 2)
             qdrant=qdrant,
@@ -102,3 +123,8 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
             status_code=500,
             detail="Recommendation engine encountered an error",
         )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
