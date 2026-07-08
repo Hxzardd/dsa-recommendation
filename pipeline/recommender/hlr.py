@@ -3,9 +3,16 @@ import math
 from collections import defaultdict
 from datetime import datetime, timezone
 
-# Load problem to topics mapping
-with open("question-graph/data/problem_topic_edges_normalized.json") as f:
-    pt_edges = json.load(f)
+# Load problem to topics mapping. Falls back to an empty mapping (with a
+# warning) instead of crashing at import time if the file is missing --
+# see bkt.py's identical fix for why this must not be a hard crash.
+try:
+    with open("question-graph/data/problem_topic_edges_normalized.json") as f:
+        pt_edges = json.load(f)
+except FileNotFoundError:
+    print("[!] question-graph/data/problem_topic_edges_normalized.json not "
+          "found -- hlr.py starting with an EMPTY problem->topic mapping.")
+    pt_edges = []
 
 problem_to_topics = defaultdict(list)
 for edge in pt_edges:

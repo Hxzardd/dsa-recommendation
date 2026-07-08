@@ -2,8 +2,21 @@ import json
 from collections import defaultdict
 import numpy as np
 
-with open("question-graph/data/problem_topic_edges_normalized.json") as f:
-    pt_edges = json.load(f)
+# Load problem->topic mapping. Falls back to an empty mapping (with a
+# warning) instead of crashing at import time if the file is missing --
+# a hard crash here previously took down every module that imports bkt.py
+# even indirectly, including unrelated tests, whenever this one data file
+# wasn't present at exactly this relative path.
+try:
+    with open("question-graph/data/problem_topic_edges_normalized.json") as f:
+        pt_edges = json.load(f)
+except FileNotFoundError:
+    print("[!] question-graph/data/problem_topic_edges_normalized.json not "
+          "found -- bkt.py starting with an EMPTY problem->topic mapping. "
+          "process_submission() will find zero topics for every problem "
+          "until this file exists at that path (relative to whatever "
+          "directory the process is run from).")
+    pt_edges = []
 
 problem_to_topics = defaultdict(list)
 for edge in pt_edges:

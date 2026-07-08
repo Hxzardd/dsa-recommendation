@@ -114,6 +114,9 @@ def check_similarity_search(client: QdrantClient, collection: str, df: pd.DataFr
         if row.empty:
             print(f"  [SKIP] '{title}' not in parquet")
             continue
+        if row.iloc[0][vector_col] is None:
+            print(f"  [SKIP] '{title}' has no '{vector_col}' (e.g. no parseable solution)")
+            continue
 
         query_vec = np.array(row.iloc[0][vector_col]).tolist()
         hits = client.query_points(
@@ -147,6 +150,9 @@ def check_filtered_search(client: QdrantClient, collection: str, df: pd.DataFram
     row = df[df["title"] == "Two Sum"]
     if row.empty:
         print("  [SKIP] Two Sum not found")
+        return
+    if row.iloc[0][vector_col] is None:
+        print(f"  [SKIP] Two Sum has no '{vector_col}'")
         return
 
     query_vec = np.array(row.iloc[0][vector_col]).tolist()
@@ -186,6 +192,9 @@ def check_cross_topic_transfer(client: QdrantClient, collection: str, df: pd.Dat
     if row.empty:
         print("  [SKIP]")
         return
+    if row.iloc[0][vector_col] is None:
+        print(f"  [SKIP] '{query_title}' has no '{vector_col}'")
+        return
 
     query_vec = np.array(row.iloc[0][vector_col]).tolist()
     hits = client.query_points(
@@ -219,18 +228,20 @@ def check_cross_topic_transfer(client: QdrantClient, collection: str, df: pd.Dat
 
 def check_random_probe(client: QdrantClient, collection: str, df: pd.DataFrame, vector_col: str, expected_dim: int = None):
     print("\n" + "="*55)
-    n_probe = min(10, len(df))
+    # Only sample rows that actually have vector_col populated. Rows missing
+    # it (e.g. problems with no parseable solution -> no question_solution_embedding)
+    # were never uploaded to Qdrant in the first place, so probing them here
+    # is a false failure, not a data integrity issue with the collection.
+    populated = df[df[vector_col].notna()]
+    n_probe = min(10, len(populated))
     print(f"  TEST 6 -- Random Vector Probe ({n_probe} random points)")
     print("="*55)
 
     if n_probe == 0:
-        print("  [SKIP] parquet is empty")
+        print(f"  [SKIP] no rows have '{vector_col}' populated")
         return
 
-    # Clamp to len(df) -- df.sample(10) crashes with
-    # "Cannot take a larger sample than population when 'replace=False'"
-    # on small dev/sample parquets with fewer than 10 rows.
-    sample = df.sample(n_probe, random_state=42)
+    sample = populated.sample(n_probe, random_state=42)
 
     for _, row in sample.iterrows():
         vec = row[vector_col]
@@ -266,11 +277,31 @@ def _infer_vector_column(collection: str) -> str:
     return "question_solution_embedding"   # default: dsa_problems / problems_v2
 
 
+def _infer_parquet_path(vector_col: str) -> str:
+    """
+    question_embedding, solution_embedding, question_solution_embedding all
+    live in vector_pool_embedded.parquet (written by embedder.py).
+    rgcn_embedding and full_embedding only exist in vector_pool_rgcn.parquet
+    (written separately by train_rgcn.py / run_rgcn_pipeline.py) -- they are
+    NOT present in vector_pool_embedded.parquet. Defaulting to the wrong file
+    silently gives an empty/None query vector and produces nonsense results
+    (every hit scoring ~1.0 with no relation to the query) instead of a clear
+    error, so this must be selected correctly rather than hardcoded to one file.
+    """
+    if vector_col in ("rgcn_embedding", "full_embedding"):
+        return "data/vector_pool/vector_pool_rgcn.parquet"
+    return "data/vector_pool/vector_pool_embedded.parquet"
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--url",          default="http://localhost:6333")
     p.add_argument("--collection",   default="dsa_problems")
-    p.add_argument("--parquet",      default="vector_pool/vector_pool_embedded.parquet")
+    p.add_argument("--parquet",      default=None,
+                   help="Override the auto-selected parquet file. If omitted, "
+                        "chosen automatically based on --vector-col: "
+                        "rgcn_embedding/full_embedding -> vector_pool_rgcn.parquet, "
+                        "everything else -> vector_pool_embedded.parquet.")
     p.add_argument("--vector-col",   default=None,
                    help="Embedding column to query with. Auto-inferred from "
                         "--collection name if omitted (e.g. 'problems_question' "
@@ -281,14 +312,21 @@ def main():
     args = p.parse_args()
 
     vector_col = args.vector_col or _infer_vector_column(args.collection)
+    parquet_path = args.parquet or _infer_parquet_path(vector_col)
 
     print("\n" + "="*55)
     print("  DSA ENGINE -- QDRANT SEARCH TESTS")
     print(f"  {args.url} / {args.collection}  (vector_col={vector_col})")
+    print(f"  parquet: {parquet_path}")
     print("="*55)
 
     client = load_client(args.url)
-    df     = load_parquet(args.parquet)
+    df     = load_parquet(parquet_path)
+
+    if vector_col not in df.columns:
+        print(f"\n[X] Column '{vector_col}' not found in {parquet_path}")
+        print(f"    Available columns: {list(df.columns)}")
+        return
 
     passed = 0
     failed = 0

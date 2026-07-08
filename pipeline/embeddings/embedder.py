@@ -447,8 +447,14 @@ def upload_to_qdrant(
 
     for i, (_, row) in enumerate(df.iterrows()):
         vec = row.get(embedding_col)
-        if vec is None:
-            vec = row.get("question_embedding")
+        # No per-row fallback to a different column here. The collection was
+        # created with a FIXED dimension (vec_size, from embedding_col above).
+        # question_embedding is 1024-d while question_solution_embedding is
+        # 1792-d -- silently substituting one for the other per-row sends a
+        # wrong-dimension vector into a fixed-dimension collection and Qdrant
+        # rejects the whole batch with a 400. Rows missing embedding_col are
+        # skipped entirely instead; they can be uploaded separately into a
+        # different collection sized for question_embedding if needed.
         if vec is None:
             skipped += 1
             continue
@@ -486,8 +492,8 @@ def upload_to_qdrant(
 
 def parse_args():
     p = argparse.ArgumentParser(description="DSA Engine -- Embedding Generator")
-    p.add_argument("--input",      "-i", default="./vector_pool/vector_pool.parquet")
-    p.add_argument("--output",     "-o", default="./vector_pool")
+    p.add_argument("--input",      "-i", default="./data/vector_pool/vector_pool.parquet")
+    p.add_argument("--output",     "-o", default="./data/vector_pool")
     p.add_argument("--batch-size", "-b", type=int, default=32,
                    help="Rows per model forward pass (lower to 8 if RAM is tight)")
     p.add_argument("--resume",     action="store_true",
