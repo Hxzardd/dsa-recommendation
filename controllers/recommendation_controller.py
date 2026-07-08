@@ -1,147 +1,104 @@
+"""
+Recommendation controller.
+
+Bridges the FastAPI routes to the full ML recommendation pipeline
+(pipeline.recommender.services.recommend.get_recommendations).
+
+Design decisions:
+    - db=None: the pipeline gracefully falls back to new_user_graph() for
+      cold-start users. BKT/HLR data flows in via the store dicts,
+      populated from our existing Postgres functions in database/postgres/db.py.
+    - redis=None, neo4j=None: disables caching tiers. The pipeline handles
+      this gracefully — graphs are rebuilt per-request from the store dicts.
+      Phase 2 will wire these in for performance.
+    - Qdrant client is created lazily on first request, not at import time,
+      so the server boots fast and doesn't crash if Qdrant isn't up yet.
+"""
+
 import os
-import json
-import requests
-from datetime import datetime, timezone
+import logging
+
+from fastapi import HTTPException
 from qdrant_client import QdrantClient
-from sentence_transformers import SentenceTransformer
-from pipeline.recommender.hlr import calculate_urgency
-from pipeline.recommender.ranking import rank_candidates
+
 from database.postgres.db import get_user_mastery, get_user_hlr
+from pipeline.recommender.services.recommend import get_recommendations
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+log = logging.getLogger(__name__)
 
-# Load once at startup
-client = QdrantClient(path=os.path.join(BASE_DIR, "qdrant_storage_v2"))
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# ---------------------------------------------------------------------------
+# Configuration — all overridable via environment variables
+# ---------------------------------------------------------------------------
 
-with open(os.path.join(BASE_DIR, "data", "topic_topic_edges_normalized.json"), encoding="utf-8-sig") as f:
-    tt_edges = json.load(f)
+QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
+COLLECTION = os.environ.get("QDRANT_COLLECTION", "problems_full")
 
-def get_last_attempted_topic(user_id):
-    backend_url = os.environ.get("BACKEND_URL", "http://localhost:3001")
+# ---------------------------------------------------------------------------
+# Lazy Qdrant singleton — created on first request, not at import time
+# ---------------------------------------------------------------------------
+
+_qdrant_client: QdrantClient | None = None
+
+
+def _get_qdrant() -> QdrantClient:
+    global _qdrant_client
+    if _qdrant_client is None:
+        _qdrant_client = QdrantClient(url=QDRANT_URL, timeout=10)
+    return _qdrant_client
+
+
+# ---------------------------------------------------------------------------
+# Handlers
+# ---------------------------------------------------------------------------
+
+def handle_recommend(user_id: str, limit: int = 10) -> dict:
+    """
+    Full ML pipeline recommendation.
+
+    1. Fetch BKT mastery and HLR state from Postgres.
+    2. Package them as {user_id: data} dicts (the format the pipeline expects).
+    3. Call get_recommendations() — which internally runs:
+       UserGraphService → UserStateBuilder → 7 Pools → CandidateFiltering
+       → HeuristicRanker → DiversityMixer → title resolution from Qdrant.
+    4. Return the result shaped to the backend's RecommendationLog schema.
+    """
+
+    # --- Step 1: fetch user data from Postgres ---
     try:
-        response = requests.get(f"{backend_url}/user/{user_id}/last_attempted", timeout=2)
-        data = response.json()
-        topics = data.get("topics", [])
-        if topics:
-            return topics[0].get("topicId")
-        return None
-    except Exception:
-        return None
+        mastery = get_user_mastery(user_id)
+        hlr = get_user_hlr(user_id)
+    except Exception as exc:
+        log.error("Postgres fetch failed for user %s: %s", user_id, exc)
+        raise HTTPException(status_code=503, detail="Database unavailable")
 
-def handle_get_candidates(topic, min_difficulty, max_difficulty, limit):
-    from qdrant_client.models import Filter, FieldCondition, Range
-    query_vector = model.encode(topic).tolist()
-    results = client.query_points(
-        collection_name="problems_v2",
-        query=query_vector,
-        limit=limit,
-        query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="difficulty_score",
-                    range=Range(gte=min_difficulty, lte=max_difficulty)
-                )
-            ]
+    # --- Step 2: package for the pipeline ---
+    # Pipeline expects: {user_id: {topic: value}}
+    bkt_store = {user_id: mastery} if mastery else {}
+    hlr_store = {user_id: hlr} if hlr else {}
+
+    # --- Step 3: call the full ML pipeline ---
+    try:
+        qdrant = _get_qdrant()
+        result = get_recommendations(
+            user_id=user_id,
+            db=None,            # skip SQLAlchemy rebuild — data flows via stores
+            redis=None,         # no Redis cache (Phase 2)
+            neo4j=None,         # no Neo4j durable store (Phase 2)
+            qdrant=qdrant,
+            bkt_store=bkt_store,
+            hlr_store=hlr_store,
+            collection=COLLECTION,
+            total_n=max(limit * 3, 30),   # over-fetch for filtering headroom
+            k=limit,
         )
-    ).points
-    return [
-        {
-            "title_slug": r.payload["title_slug"],
-            "title": r.payload["title"],
-            "description": r.payload["description"],
-            "topics": r.payload["topics"],
-            "difficulty_score": r.payload["difficulty_score"],
-            "score": r.score
-        }
-        for r in results
-    ]
+        return result.to_dict()
 
-def handle_recommend(user_id, limit):
-    mastery = get_user_mastery(user_id)
-    hlr_state = get_user_hlr(user_id)
-    current_time = datetime.now(timezone.utc).timestamp()
-
-    topic_scores = {}
-    all_topics = set(list(mastery.keys()) + list(hlr_state.keys()))
-
-    for topic in all_topics:
-        bkt_score = 1 - mastery.get(topic, 0.15)
-        urgency = calculate_urgency(hlr_state.get(topic, {}), current_time)
-        topic_scores[topic] = 0.6 * bkt_score + 0.4 * urgency
-
-    if not topic_scores:
-        return {"message": "No history found for user. Start solving problems first.", "candidates": []}
-
-    urgent_topic = max(
-        hlr_state.keys(),
-        key=lambda t: calculate_urgency(hlr_state[t], current_time)
-    ) if hlr_state else None
-
-    weak_topic = min(
-        [t for t in mastery.keys() if t != urgent_topic],
-        key=lambda t: mastery[t]
-    ) if mastery and any(t != urgent_topic for t in mastery.keys()) else None
-
-    current_topic = get_last_attempted_topic(user_id)
-    if current_topic not in topic_scores or current_topic == urgent_topic or current_topic == weak_topic:
-        current_topic = None
-    if not current_topic:
-        remaining = [t for t in topic_scores if t != urgent_topic and t != weak_topic]
-        current_topic = max(remaining, key=topic_scores.get) if remaining else None
-
-    topic_categories = {}
-    if urgent_topic:
-        topic_categories[urgent_topic] = "needs_attention"
-    if weak_topic:
-        topic_categories[weak_topic] = "weak_topic"
-    if current_topic:
-        topic_categories[current_topic] = "current_topic"
-
-    top_topics = [t for t in [urgent_topic, weak_topic, current_topic] if t]
-
-    seen = set()
-    candidates = []
-    per_topic = max(1, limit // max(1, len(top_topics)))
-
-    for topic in top_topics:
-        query_vector = model.encode(topic).tolist()
-        results = client.query_points(
-            collection_name="problems_v2",
-            query=query_vector,
-            limit=per_topic
-        ).points
-
-        for r in results:
-            slug = r.payload["title_slug"]
-            if slug not in seen:
-                seen.add(slug)
-                candidates.append({
-                    "title_slug": slug,
-                    "title": r.payload["title"],
-                    "description": r.payload["description"],
-                    "topics": r.payload["topics"],
-                    "difficulty_score": r.payload["difficulty_score"],
-                    "score": r.score,
-                    "category": topic_categories.get(topic, "general")
-                })
-
-    ranked = rank_candidates(
-        candidates=candidates,
-        user_bkt_mastery=mastery,
-        user_hlr_state=hlr_state,
-        recent_topics=list(mastery.keys())[:10],
-        topic_topic_edges=tt_edges,
-        current_timestamp=current_time
-    )
-
-    return {
-        "userId": user_id,
-        "topic_breakdown": {
-            "needs_attention": urgent_topic,
-            "weak_topic": weak_topic,
-            "current_topic": current_topic
-        },
-        "recommended": ranked[0] if ranked else None,
-        "all_candidates_ranked": ranked[:limit]
-    }
+    except Exception as exc:
+        log.error(
+            "Recommendation pipeline failed for user %s: %s", user_id, exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Recommendation engine encountered an error",
+        )
