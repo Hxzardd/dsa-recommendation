@@ -8,6 +8,6 @@ router = APIRouter()
 
 
 @router.get("/recommend/{user_id}")
-def recommend(user_id: str, limit: int = 10):
+async def recommend(user_id: str, limit: int = 10):
     limit = max(MIN_RECOMMENDATIONS, min(limit, MAX_RECOMMENDATIONS))
     return handle_recommend(user_id, limit)
