@@ -35,11 +35,21 @@ def load_prerequisites() -> dict:
     finally:
         conn.close()
 
-PREREQ_TABLE = load_prerequisites()
+_PREREQ_TABLE = None
+
+def _get_prereq_table():
+    global _PREREQ_TABLE
+    if _PREREQ_TABLE is None:
+        try:
+            _PREREQ_TABLE = load_prerequisites()
+        except Exception:
+            _PREREQ_TABLE = {}
+    return _PREREQ_TABLE
 
 def prerequisite_check(problem_topics, user_bkt_mastery, threshold=0.75):
+    prereqs = _get_prereq_table()
     for topic in problem_topics:
-        for prereq in PREREQ_TABLE.get(topic, []):
+        for prereq in prereqs.get(topic, []):
             if user_bkt_mastery.get(prereq, 0) < threshold:
                 return False
     return True

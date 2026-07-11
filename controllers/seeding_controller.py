@@ -71,9 +71,8 @@ def handle_seed_hlr(user_id: str):
     for sub in submissions:
         problem = sub.get("problem", {})
         name = problem.get("name", "")
-        tags = problem.get("tags", [])
+        tags = [t.lower().replace(" ", "_") for t in problem.get("tags", [])]
         problem_to_topics[name] = tags
-
     half_lives = seed_half_life_from_cf(converted, problem_to_topics)
 
     # Only seed topics the user doesn't already have HLR data for.
@@ -184,7 +183,7 @@ def handle_seed_bkt(user_id: str):
         verdict = "OK" if status == "Accepted" else "FAILED"
 
         submission_dict = {
-            "problemId": title,
+            "problemId": title.lower().replace(" ", "-"),
             "verdict": verdict,
             "hintsUsed": 0,
             "testCasesPassed": 1 if verdict == "OK" else 0,
