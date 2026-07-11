@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from routes.seeding import router as seeding_router
 import os
 load_dotenv()
 
@@ -13,7 +14,7 @@ app = FastAPI()
 app.include_router(submission_router)
 app.include_router(mastery_router)
 app.include_router(recommendation_router)
-
+app.include_router(seeding_router)
 @app.get("/")
 async def root():
     return {
