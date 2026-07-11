@@ -1,9 +1,18 @@
 import os
 import psycopg2
+from pathlib import Path
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
-load_dotenv()
+# Walk up from this file to find the repo root .env -- works regardless
+# of what directory uvicorn is launched from.
+_here = Path(__file__).resolve()
+for _p in [_here.parent, *_here.parents]:
+    if (_p / ".env").exists():
+        load_dotenv(_p / ".env")
+        break
+else:
+    load_dotenv()  # fallback
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -69,9 +78,31 @@ def save_user_hlr(user_id: str, hlr_state: dict):
                         next_review_days = EXCLUDED.next_review_days
                 """, (
                     user_id, topic_id,
-                    state["half_life"], state["last_review"],
-                    state["p_recall"], state["next_review_days"]
+                    state["half_life"], state.get("last_review"),
+                    state.get("p_recall", 0.5), state.get("next_review_days", 1.0)
                 ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_user_mastery(user_id: str, mastery: dict):
+    """
+    Write BKT mastery scores to user_topic_mastery table.
+    Used by seeding_controller.py when seeding initial mastery from
+    LeetCode/Codeforces history. Uses ON CONFLICT DO NOTHING so it
+    never overwrites mastery that was already computed from real
+    in-platform submissions.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            for topic_id, mastery_score in mastery.items():
+                cur.execute("""
+                    INSERT INTO user_topic_mastery (user_id, topic_id, mastery_score, updated_at)
+                    VALUES (%s, %s, %s, NOW())
+                    ON CONFLICT (user_id, topic_id) DO NOTHING
+                """, (user_id, topic_id, mastery_score))
         conn.commit()
     finally:
         conn.close()

@@ -138,16 +138,23 @@ class FakeQdrant:
     def scroll(self, collection_name, scroll_filter=None, limit=10,
                with_payload=True, with_vectors=False):
         want_tags = None
+        want_problem_ids = None
         diff_range = None
         if scroll_filter is not None:
             for cond in scroll_filter.must:
                 key = getattr(cond, "key", None)
                 if key == "topic_tags" and getattr(cond, "match", None) is not None:
                     want_tags = set(cond.match.any)
+                if key == "problem_id" and getattr(cond, "match", None) is not None:
+                    # _resolve_titles now uses scroll(filter=problem_id MatchAny)
+                    # instead of retrieve() by hash ID
+                    want_problem_ids = set(cond.match.any)
                 if key == "difficulty_score" and getattr(cond, "range", None) is not None:
                     diff_range = cond.range
         out = []
         for p in self.problems:
+            if want_problem_ids is not None and p.id not in want_problem_ids:
+                continue
             if want_tags is not None and not (set(p.payload["topic_tags"]) & want_tags):
                 continue
             if diff_range is not None:
@@ -168,14 +175,10 @@ class FakeQdrant:
         return R()
 
     def retrieve(self, collection_name, ids, with_payload=True, with_vectors=False):
-        out = []
-        for point_id in ids:
-            p = self._by_point_id.get(point_id)
-            if p is not None:
-                fake = _Pt(p.id, p.payload["topic_tags"], p.payload["difficulty_score"])
-                fake.id = point_id   # retrieve() results carry the Qdrant point ID, not the raw problem_id
-                out.append(fake)
-        return out
+        # retrieve() is no longer used for title resolution (replaced by
+        # scroll+problem_id filter). Kept here so tests that still call it
+        # don't break, but returns empty.
+        return []
 
 
 def _problems(n_per_topic=15):
