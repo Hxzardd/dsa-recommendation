@@ -5,6 +5,17 @@ from pipeline.recommender.bkt import process_submission
 from database.postgres.db import get_connection, save_user_hlr
 from psycopg2.extras import RealDictCursor
 
+def user_exists(user_id: str) -> bool:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                'SELECT 1 FROM "user" WHERE id = %s',
+                (user_id,)
+            )
+            return cur.fetchone() is not None
+    finally:
+        conn.close()
 
 def get_user_cf_handle(user_id: str):
     conn = get_connection()
@@ -50,6 +61,8 @@ def get_cf_submissions(cf_handle: str):
 
 
 def handle_seed_hlr(user_id: str):
+    if not user_exists(user_id):
+        return {"message": "User not found"}
     cf_handle = get_user_cf_handle(user_id)
     if not cf_handle:
         return {"message": "No Codeforces handle linked for this user"}
@@ -108,6 +121,7 @@ def handle_seed_hlr(user_id: str):
     }
 
 
+
 def get_user_lc_handle(user_id: str):
     conn = get_connection()
     try:
@@ -164,6 +178,8 @@ def save_user_mastery(user_id: str, mastery: dict):
 
 
 def handle_seed_bkt(user_id: str):
+    if not user_exists(user_id):
+        return {"message": "User not found"}
     lc_handle = get_user_lc_handle(user_id)
     if not lc_handle:
         return {"message": "No LeetCode handle linked for this user"}
@@ -178,7 +194,6 @@ def handle_seed_bkt(user_id: str):
     for sub in submissions:
         title = sub.get("title", "")
         status = sub.get("statusDisplay", "")
-        tags = [t.get("slug", "") for t in sub.get("topicTags", [])]
 
         verdict = "OK" if status == "Accepted" else "FAILED"
 
