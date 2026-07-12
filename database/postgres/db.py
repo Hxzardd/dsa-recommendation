@@ -7,10 +7,13 @@ load_dotenv()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+
 def get_connection():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL environment variable is not set")
     return psycopg2.connect(DATABASE_URL)
+
+
 def get_user_mastery(user_id: str) -> dict:
     conn = get_connection()
     try:
@@ -21,26 +24,12 @@ def get_user_mastery(user_id: str) -> dict:
             )
             rows = cur.fetchall()
             return {
-              row["topic_id"]: float(row["mastery_score"]) if row["mastery_score"] is not None else 0.0
-              for row in rows
+                row["topic_id"]: float(row["mastery_score"]) if row["mastery_score"] is not None else 0.0
+                for row in rows
             }
     finally:
         conn.close()
 
-def save_user_mastery(user_id: str, mastery: dict):
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            for topic_id, mastery_score in mastery.items():
-                cur.execute("""
-                    INSERT INTO user_topic_mastery (user_id, topic_id, mastery_score, updated_at)
-                    VALUES (%s, %s, %s, NOW())
-                    ON CONFLICT (user_id, topic_id)
-                    DO UPDATE SET mastery_score = EXCLUDED.mastery_score, updated_at = CASE WHEN user_topic_mastery.mastery_score IS DISTINCT FROM EXCLUDED.mastery_score THEN NOW() ELSE user_topic_mastery.updated_at END
-                """, (user_id, topic_id, mastery_score))
-        conn.commit()
-    finally:
-        conn.close()
 
 def get_user_hlr(user_id: str) -> dict:
     conn = get_connection()
@@ -62,6 +51,7 @@ def get_user_hlr(user_id: str) -> dict:
             }
     finally:
         conn.close()
+
 
 def save_user_hlr(user_id: str, hlr_state: dict):
     conn = get_connection()

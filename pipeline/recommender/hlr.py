@@ -1,19 +1,23 @@
 import json
 import math
+import os
 from collections import defaultdict
 from datetime import datetime, timezone
 
-# Load problem to topics mapping. Falls back to an empty mapping (with a
-# warning) instead of crashing at import time if the file is missing --
-# see bkt.py's identical fix for why this must not be a hard crash.
+# Load problem to topics mapping. Absolute path so this works regardless of
+# the working directory the process is launched from. Falls back to an empty
+# mapping (with a warning) instead of crashing at import time if the file is
+# missing -- see bkt.py's identical fix for why this must not be a hard crash.
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_pt_edges_path = os.path.join(_BASE_DIR, "data", "problem_topic_edges_normalized.json")
 try:
-    with open("question-graph/data/problem_topic_edges_normalized.json") as f:
+    with open(_pt_edges_path) as f:
         pt_edges = json.load(f)
 except FileNotFoundError:
-    print("[!] question-graph/data/problem_topic_edges_normalized.json not "
-          "found -- hlr.py starting with an EMPTY problem->topic mapping.")
+    print(f"[!] {_pt_edges_path} not found -- hlr.py starting with an EMPTY "
+          f"problem->topic mapping.")
     pt_edges = []
-
+    
 problem_to_topics = defaultdict(list)
 for edge in pt_edges:
     problem_to_topics[edge["source"]].append(edge["target"])

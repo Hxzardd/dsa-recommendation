@@ -1,23 +1,22 @@
 import json
+import os
 from collections import defaultdict
 import numpy as np
 
-# Load problem->topic mapping. Falls back to an empty mapping (with a
-# warning) instead of crashing at import time if the file is missing --
-# a hard crash here previously took down every module that imports bkt.py
-# even indirectly, including unrelated tests, whenever this one data file
-# wasn't present at exactly this relative path.
+# Load problem->topic mapping. Absolute path so this works regardless of the
+# working directory the process is launched from. Falls back to an empty
+# mapping (with a warning) instead of crashing at import time if the file is
+# missing, so an unrelated import chain doesn't take down the whole app.
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_pt_edges_path = os.path.join(_BASE_DIR, "data", "problem_topic_edges_normalized.json")
 try:
-    with open("question-graph/data/problem_topic_edges_normalized.json") as f:
+    with open(_pt_edges_path) as f:
         pt_edges = json.load(f)
 except FileNotFoundError:
-    print("[!] question-graph/data/problem_topic_edges_normalized.json not "
-          "found -- bkt.py starting with an EMPTY problem->topic mapping. "
-          "process_submission() will find zero topics for every problem "
-          "until this file exists at that path (relative to whatever "
-          "directory the process is run from).")
+    print(f"[!] {_pt_edges_path} not found -- bkt.py starting with an EMPTY "
+          f"problem->topic mapping. process_submission() will find zero "
+          f"topics for every problem until this file exists.")
     pt_edges = []
-
 problem_to_topics = defaultdict(list)
 for edge in pt_edges:
     problem_to_topics[edge["source"]].append(edge["target"])
