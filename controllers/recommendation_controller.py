@@ -2,35 +2,29 @@
 Recommendation controller.
 
 Stateless ML service -- backend sends everything needed in the request,
-ML computes and returns results. No Postgres reads or writes here.
-
-Flow:
-    GET /recommend/{user_id}
-        -> backend fetches user mastery + HLR from Postgres
-        -> passes them as query params or the controller reads them
-           via the db functions backend owns
-        -> Qdrant vector search returns candidates
-        -> ranking.py scores + filters candidates
-        -> return ranked list
-
-Since ranking.py already reads mastery/HLR from Postgres directly
-(via get_connection()), and Qdrant search is done here, this controller
-is intentionally thin: get candidates from Qdrant, rank them, return.
+ML computes and returns results. No Postgres writes here, read-only
+access to mastery/HLR tables.
 """
 
 import logging
+import os
 
+import psycopg2
 from fastapi import HTTPException
 
 import db_env
 from database.postgres.db import get_user_mastery, get_user_hlr
 from pipeline.recommender.services.neo4j_graph_store import Neo4jGraphStore
 from pipeline.recommender.services.recommend import get_recommendations
-from pipeline.recommender.services.user_graph_service import UserGraphService
 
 log = logging.getLogger(__name__)
 
-COLLECTION = "problems_full"
+# FIX (Greptile P1 "Collection Override Is Removed"): this was hardcoded
+# to "problems_full", silently dropping the QDRANT_COLLECTION env
+# override. Any deployment using a versioned/environment-specific
+# collection name would query the wrong one. Restored the override,
+# same default value so nothing changes for the current setup.
+COLLECTION = os.environ.get("QDRANT_COLLECTION", "problems_full")
 
 # ---------------------------------------------------------------------------
 # DBWrapper -- normalizes any psycopg2 cursor row type (plain tuple OR
@@ -110,9 +104,17 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
     try:
         mastery = get_user_mastery(user_id) or {}
         hlr = get_user_hlr(user_id) or {}
-    except RuntimeError as exc:
-        # DATABASE_URL not set -- graceful cold-start instead of 503
-        log.warning("Postgres unavailable (%s) -- cold-start for user %s", exc, user_id)
+    except (RuntimeError, psycopg2.Error) as exc:
+        # FIX (Greptile P1 "Database Fallback Misses Outages"): only
+        # RuntimeError (unset DATABASE_URL) was caught before. A real
+        # outage -- connection refused, timeout, auth failure -- raises
+        # psycopg2.OperationalError/InterfaceError/etc, all subclasses of
+        # psycopg2.Error, NOT RuntimeError. Those escaped this branch
+        # entirely and surfaced as an unhandled 500. Now both the
+        # "not configured" case and genuine outages degrade to the same
+        # graceful cold-start path instead of crashing.
+        log.warning("Postgres unavailable (%s: %s) -- cold-start for user %s",
+                   exc.__class__.__name__, exc, user_id)
         mastery, hlr = {}, {}
 
     bkt_store = {user_id: mastery}

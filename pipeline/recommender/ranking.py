@@ -38,12 +38,24 @@ def load_prerequisites() -> dict:
 _PREREQ_TABLE = None
 
 def _get_prereq_table():
+    """
+    FIX (Greptile P1 "Transient Failure Disables Prerequisites"): the old
+    version cached {} on ANY failure (including a transient one during
+    Postgres startup), and since {} is falsy-but-not-None, `_PREREQ_TABLE
+    is None` was False on every subsequent call -- meaning it never
+    retried, ever, even after Postgres recovered. Every prerequisite
+    check silently passed for the rest of the process lifetime.
+
+    Fixed: only a SUCCESSFUL load is cached. A failed attempt leaves
+    _PREREQ_TABLE as None, so the next call retries instead of being
+    stuck with a stale empty table forever.
+    """
     global _PREREQ_TABLE
     if _PREREQ_TABLE is None:
         try:
             _PREREQ_TABLE = load_prerequisites()
         except Exception:
-            _PREREQ_TABLE = {}
+            return {}   # NOT cached -- next call retries
     return _PREREQ_TABLE
 
 def prerequisite_check(problem_topics, user_bkt_mastery, threshold=0.75):

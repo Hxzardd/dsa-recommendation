@@ -116,11 +116,30 @@ def neo4j_driver():
     or the connection fails. Callers should treat None as "Neo4j disabled
     for this run" -- matches Neo4jGraphStore(driver=None)'s existing
     no-op behaviour, never a crash.
+
+    FIX (Greptile P1 "Missing Driver Silently Disables Neo4j"): the
+    `neo4j` package was missing from pyproject.toml/uv.lock, so a normal
+    locked install raised ModuleNotFoundError here -- caught by the same
+    broad `except Exception` as a real connection failure, so a missing
+    dependency was silently indistinguishable from Neo4j just being
+    unreachable. neo4j>=6.0.0 is now in pyproject.toml (run `uv lock` to
+    regenerate uv.lock if you haven't). This also now logs a distinct,
+    actionable message for the missing-package case specifically, so
+    this doesn't go silent again if the lockfile ever drifts.
     """
     if not NEO4J_PASSWORD:
         return None
     try:
         from neo4j import GraphDatabase
+    except ModuleNotFoundError:
+        import logging
+        logging.getLogger(__name__).error(
+            "neo4j package not installed -- Neo4j durable storage disabled. "
+            "Run: uv add neo4j  (or confirm neo4j>=6.0.0 is in pyproject.toml "
+            "and re-run: uv lock && uv sync)"
+        )
+        return None
+    try:
         driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
         driver.verify_connectivity()
         return driver
