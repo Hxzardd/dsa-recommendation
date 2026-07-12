@@ -101,34 +101,41 @@ def _pool_sources_to_backend_source(pool_sources: list) -> str:
     return "course_path"   # should be unreachable; safe fallback
 
 
-def _stable_point_id(problem_id: str) -> int:
-    """Must exactly match pipeline/graphs/ingest_rgcn_to_qdrant.py's function of the same name."""
-    try:
-        import xxhash
-        return xxhash.xxh64(problem_id).intdigest() & 0x7FFF_FFFF_FFFF_FFFF
-    except ImportError:
-        import hashlib
-        return int(hashlib.sha256(problem_id.encode()).hexdigest(), 16) & 0x7FFF_FFFF_FFFF_FFFF
-
-
 def _resolve_titles(problem_ids: list, qdrant, collection: str) -> dict:
-    """Batch-resolve problem_id -> Qdrant payload (title, title_slug, etc) via one retrieve() call."""
+    """
+    Resolve problem_id strings -> Qdrant payload (title, title_slug, etc).
+
+    Uses scroll() with a problem_id payload filter instead of retrieve()
+    by point ID. The internal Qdrant point IDs are raw integers assigned
+    at ingest time -- not the xxhash values _stable_point_id() produces.
+    retrieve() by hash ID always returns nothing. scroll() with a keyword
+    filter on the problem_id payload field is the correct approach since
+    problem_id is now indexed (after create_qdrant_indexes.py was run).
+    """
     if not problem_ids or qdrant is None:
         return {}
-    point_ids = [_stable_point_id(pid) for pid in problem_ids]
-    id_to_pid = dict(zip(point_ids, problem_ids))
     try:
-        points = qdrant.retrieve(collection_name=collection, ids=point_ids,
-                                 with_payload=True, with_vectors=False)
+        from qdrant_client.models import Filter, FieldCondition, MatchAny
+        points, _ = qdrant.scroll(
+            collection_name=collection,
+            scroll_filter=Filter(must=[
+                FieldCondition(
+                    key="problem_id",
+                    match=MatchAny(any=problem_ids),
+                )
+            ]),
+            limit=len(problem_ids),
+            with_payload=True,
+            with_vectors=False,
+        )
+        return {
+            p.payload["problem_id"]: p.payload
+            for p in points
+            if p.payload and "problem_id" in p.payload
+        }
     except Exception as exc:
         log.warning("Title resolution failed: %s", exc)
         return {}
-    resolved = {}
-    for p in points:
-        pid = id_to_pid.get(p.id)
-        if pid is not None:
-            resolved[pid] = p.payload or {}
-    return resolved
 
 
 @dataclass

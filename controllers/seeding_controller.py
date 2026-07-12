@@ -1,7 +1,10 @@
 import requests
 from collections import defaultdict
 from pipeline.recommender.hlr import seed_half_life_from_cf
-from pipeline.recommender.bkt import process_submission
+from pipeline.recommender.bkt import (
+    process_submission, calculate_observed, update_bkt,
+    MASTERY_THRESHOLD, DEFAULT_P_L,
+)
 from database.postgres.db import get_connection, save_user_hlr
 from psycopg2.extras import RealDictCursor
 
@@ -16,6 +19,18 @@ def user_exists(user_id: str) -> bool:
             return cur.fetchone() is not None
     finally:
         conn.close()
+
+class ProviderError(Exception):
+    """
+    FIX (Greptile P2 "Provider Failures Become Empty History"): raised
+    when Codeforces/LeetCode actually fail (timeout, non-JSON, HTTP
+    error) -- distinct from a genuinely empty submission history, so
+    callers can tell a retryable outage apart from "this user really
+    has no submissions" instead of both collapsing into the same
+    silent empty-list response.
+    """
+    pass
+
 
 def get_user_cf_handle(user_id: str):
     conn = get_connection()
@@ -47,17 +62,30 @@ def get_existing_hlr_topics(user_id: str) -> set:
 
 
 def get_cf_submissions(cf_handle: str):
+    """
+    Raises ProviderError on an actual fetch failure (timeout, non-JSON,
+    non-OK status from Codeforces) instead of silently returning [].
+    A real empty submission history still returns [] normally -- only
+    genuine failures raise now.
+    """
     try:
         response = requests.get(
             f"https://codeforces.com/api/user.status?handle={cf_handle}",
             timeout=10
         )
+        response.raise_for_status()
         data = response.json()
-        if data.get("status") == "OK":
-            return data.get("result", [])
+    except requests.RequestException as exc:
+        raise ProviderError(f"Codeforces request failed: {exc}") from exc
+    except ValueError as exc:
+        raise ProviderError(f"Codeforces returned non-JSON response: {exc}") from exc
+
+    if data.get("status") != "OK":
+        # A malformed/unknown handle still returns status != "OK" from CF's
+        # API but is a legitimate "no such user" case, not a fetch failure
+        # -- treat as empty history, not ProviderError.
         return []
-    except Exception:
-        return []
+    return data.get("result", [])
 
 
 def handle_seed_hlr(user_id: str):
@@ -67,7 +95,16 @@ def handle_seed_hlr(user_id: str):
     if not cf_handle:
         return {"message": "No Codeforces handle linked for this user"}
 
-    submissions = get_cf_submissions(cf_handle)
+    try:
+        submissions = get_cf_submissions(cf_handle)
+    except ProviderError as exc:
+        return {
+            "userId": user_id,
+            "cf_handle": cf_handle,
+            "error": "provider_unavailable",
+            "message": f"Could not fetch Codeforces submissions: {exc}",
+        }
+
     if not submissions:
         return {"message": "No Codeforces submissions found"}
 
@@ -137,6 +174,7 @@ def get_user_lc_handle(user_id: str):
 
 
 def get_lc_submissions(lc_handle: str):
+    """Raises ProviderError on an actual fetch failure -- same fix as get_cf_submissions."""
     try:
         query = """
         {
@@ -155,10 +193,20 @@ def get_lc_submissions(lc_handle: str):
             json={"query": query},
             timeout=10
         )
+        response.raise_for_status()
         data = response.json()
-        return data.get("data", {}).get("recentSubmissionList", [])
-    except Exception:
-        return []
+    except requests.RequestException as exc:
+        raise ProviderError(f"LeetCode request failed: {exc}") from exc
+    except ValueError as exc:
+        raise ProviderError(f"LeetCode returned non-JSON response: {exc}") from exc
+
+    if "errors" in data:
+        # GraphQL-level errors (bad handle, rate limited, etc) come back
+        # as HTTP 200 with an "errors" key -- also a real failure, not
+        # legitimately empty history.
+        raise ProviderError(f"LeetCode GraphQL error: {data['errors']}")
+
+    return data.get("data", {}).get("recentSubmissionList", [])
 
 
 def save_user_mastery(user_id: str, mastery: dict):
@@ -177,6 +225,42 @@ def save_user_mastery(user_id: str, mastery: dict):
         conn.close()
 
 
+def _apply_bkt_update(current_mastery: dict, topics: list, verdict: str,
+                      hints_used: int, test_cases_passed: int,
+                      total_test_cases: int, submission_count: int,
+                      normalised_score: float) -> tuple:
+    """
+    FIX (Greptile P1 "Fetched Topic Tags Are Discarded"): process_submission()
+    looks up topics via the module-level problem_to_topics mapping keyed
+    by problemId -- but LeetCode's API already RETURNS the real topic
+    tags per submission directly (sub["topicTags"]). Routing through
+    process_submission() meant a valid recent problem absent from (or
+    normalizing differently in) that mapping produced ZERO mastery
+    update despite LC handing us its actual tags right there in the
+    response. This applies BKT directly against the topics LC gave us,
+    bypassing the internal title-to-slug lookup entirely for this path.
+
+    Mirrors process_submission()'s per-topic logic exactly (same
+    calculate_observed + update_bkt + MASTERY_THRESHOLD), just topic-source
+    swapped.
+    """
+    if not topics:
+        return current_mastery, []
+
+    observed = calculate_observed(
+        verdict=verdict, hints_taken=hints_used,
+        test_cases_passed=test_cases_passed, total_test_cases=total_test_cases,
+        submission_count=submission_count, normalised_score=normalised_score,
+    )
+
+    updated = dict(current_mastery)
+    for topic in topics:
+        current_p_l = current_mastery.get(topic, DEFAULT_P_L["branch"])
+        updated[topic] = update_bkt(current_p_l, observed)
+
+    return updated, topics
+
+
 def handle_seed_bkt(user_id: str):
     if not user_exists(user_id):
         return {"message": "User not found"}
@@ -184,37 +268,48 @@ def handle_seed_bkt(user_id: str):
     if not lc_handle:
         return {"message": "No LeetCode handle linked for this user"}
 
-    submissions = get_lc_submissions(lc_handle)
+    try:
+        submissions = get_lc_submissions(lc_handle)
+    except ProviderError as exc:
+        return {
+            "userId": user_id,
+            "lc_handle": lc_handle,
+            "error": "provider_unavailable",
+            "message": f"Could not fetch LeetCode submissions: {exc}",
+        }
+
     if not submissions:
         return {"message": "No LeetCode submissions found"}
 
-    # Build mastery from LC submissions using BKT.
-    # Start from empty mastery and process each submission in order.
+    # FIX (Greptile P1 "History Is Applied Newest First"): LeetCode's
+    # recentSubmissionList returns newest-first. BKT is a SEQUENTIAL
+    # update -- each result feeds into the next as current_mastery -- so
+    # processing newest-first applies the user's attempts in REVERSE
+    # chronological order, producing a materially different (wrong)
+    # final mastery state than processing oldest-to-newest. Sorted here
+    # by numeric timestamp ascending before the fold. LC's timestamp
+    # field is a string in the GraphQL response, hence int(...).
+    submissions = sorted(submissions, key=lambda s: int(s.get("timestamp", 0) or 0))
+
     current_mastery = {}
     for sub in submissions:
-        title = sub.get("title", "")
         status = sub.get("statusDisplay", "")
-
+        # FIX: use the REAL tags LeetCode returned for this submission,
+        # not a title-to-slug guess routed through an unrelated mapping.
+        tags = [t.get("slug", "") for t in sub.get("topicTags", []) if t.get("slug")]
         verdict = "OK" if status == "Accepted" else "FAILED"
-
-        submission_dict = {
-            "problemId": title.lower().replace(" ", "-"),
-            "verdict": verdict,
-            "hintsUsed": 0,
-            "testCasesPassed": 1 if verdict == "OK" else 0,
-            "totalTestCases": 1,
-            "submissionCount": 1,
-            "normalisedScore": 1.0 if verdict == "OK" else 0.0,
-            "timestamp": sub.get("timestamp", 0)
-        }
-
-        updated_mastery, _, _ = process_submission(submission_dict, current_mastery)
-        current_mastery = updated_mastery
+        current_mastery, _ = _apply_bkt_update(
+            current_mastery, tags, verdict,
+            hints_used=0,
+            test_cases_passed=1 if verdict == "OK" else 0,
+            total_test_cases=1,
+            submission_count=1,
+            normalised_score=1.0 if verdict == "OK" else 0.0,
+        )
 
     if not current_mastery:
         return {"message": "No topics found in LeetCode submissions"}
 
-    # Only write topics not already in the mastery table (don't overwrite real data).
     save_user_mastery(user_id, current_mastery)
 
     return {
