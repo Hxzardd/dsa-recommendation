@@ -31,7 +31,13 @@ def verify_session(authorization: str = Header(None)):
             if session is None:
                 raise HTTPException(401, "Invalid session")
 
-            if session["expires_at"] <= datetime.now(timezone.utc):
+            expires_at = session["expires_at"]
+
+            # Handle both naive and timezone-aware timestamps
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+            if expires_at <= datetime.now(timezone.utc):
                 raise HTTPException(401, "Session expired")
 
             return session["user_id"]
