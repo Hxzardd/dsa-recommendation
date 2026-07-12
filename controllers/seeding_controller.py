@@ -8,6 +8,17 @@ from pipeline.recommender.bkt import (
 from database.postgres.db import get_connection, save_user_hlr
 from psycopg2.extras import RealDictCursor
 
+def user_exists(user_id: str) -> bool:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                'SELECT 1 FROM "user" WHERE id = %s',
+                (user_id,)
+            )
+            return cur.fetchone() is not None
+    finally:
+        conn.close()
 
 class ProviderError(Exception):
     """
@@ -78,6 +89,8 @@ def get_cf_submissions(cf_handle: str):
 
 
 def handle_seed_hlr(user_id: str):
+    if not user_exists(user_id):
+        return {"message": "User not found"}
     cf_handle = get_user_cf_handle(user_id)
     if not cf_handle:
         return {"message": "No Codeforces handle linked for this user"}
@@ -143,6 +156,7 @@ def handle_seed_hlr(user_id: str):
         "topics_seeded": len(new_topics),
         "half_lives": new_topics
     }
+
 
 
 def get_user_lc_handle(user_id: str):
@@ -248,6 +262,8 @@ def _apply_bkt_update(current_mastery: dict, topics: list, verdict: str,
 
 
 def handle_seed_bkt(user_id: str):
+    if not user_exists(user_id):
+        return {"message": "User not found"}
     lc_handle = get_user_lc_handle(user_id)
     if not lc_handle:
         return {"message": "No LeetCode handle linked for this user"}
@@ -281,9 +297,7 @@ def handle_seed_bkt(user_id: str):
         # FIX: use the REAL tags LeetCode returned for this submission,
         # not a title-to-slug guess routed through an unrelated mapping.
         tags = [t.get("slug", "") for t in sub.get("topicTags", []) if t.get("slug")]
-
         verdict = "OK" if status == "Accepted" else "FAILED"
-
         current_mastery, _ = _apply_bkt_update(
             current_mastery, tags, verdict,
             hints_used=0,
