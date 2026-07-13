@@ -3,20 +3,26 @@ import os
 from collections import defaultdict
 import numpy as np
 
-# Load problem->topic mapping. Absolute path so this works regardless of the
-# working directory the process is launched from. Falls back to an empty
-# mapping (with a warning) instead of crashing at import time if the file is
-# missing, so an unrelated import chain doesn't take down the whole app.
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_pt_edges_path = os.path.join(_BASE_DIR, "data", "problem_topic_edges_normalized.json")
+# Load problem->topic mapping
+_BASE_DIR = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+_pt_edges_path = os.path.join(
+    _BASE_DIR,
+    "data",
+    "problem_topic_edges_normalized.json",
+)
+
 try:
     with open(_pt_edges_path) as f:
         pt_edges = json.load(f)
 except FileNotFoundError:
-    print(f"[!] {_pt_edges_path} not found -- bkt.py starting with an EMPTY "
-          f"problem->topic mapping. process_submission() will find zero "
-          f"topics for every problem until this file exists.")
+    print(
+        f"[!] {_pt_edges_path} not found -- bkt.py starting with an EMPTY "
+        f"problem->topic mapping."
+    )
     pt_edges = []
+
 problem_to_topics = defaultdict(list)
 for edge in pt_edges:
     problem_to_topics[edge["source"]].append(edge["target"])
@@ -24,8 +30,8 @@ for edge in pt_edges:
 print(f"Loaded topic mappings for {len(problem_to_topics)} problems")
 
 BKT_PARAMS = {
-    "P_T": 0.2,   # probability of learning after one attempt
-    "P_G": 0.1,   # probability of guessing correctly without knowing
+    "P_T": 0.1,   # probability of learning after one attempt
+    "P_G": 0.3,   # probability of guessing correctly without knowing
     "P_S": 0.1,   # probability of slipping even if they know
 }
 
@@ -160,28 +166,37 @@ def update_bkt(current_p_l, observed):
         new_p_l = p_l_given_obs + (1 - p_l_given_obs) * P_T
     else:
         new_p_l = p_l_given_obs
-
     return round(min(1.0, max(0.0, new_p_l)), 4)
 
 def process_submission(submission, user_mastery):
     """
     Process a submission and update BKT mastery for all related topics.
-    
+
     Args:
-        submission: dict with userId, problemId, verdict, testCasesPassed,
-                    totalTestCases, hintsUsed, submissionCount, normalisedScore
+        submission: dict with userId, problemId, problemTopics,
+                    verdict, testCasesPassed, totalTestCases,
+                    hintsUsed, submissionCount, normalisedScore
         user_mastery: dict of {topic_slug: p_l} for this user
-    
+
     Returns:
         updated_mastery: dict of {topic_slug: new_p_l}
         mastered_topics: list of topics that crossed mastery threshold
         results: detailed results per topic
     """
-    problem_id = submission["problemId"]
-    topics = problem_to_topics.get(problem_id, [])
+    # Use the topics supplied by the backend instead of looking them up
+    # from the static mapping.
+    problem_topics = submission.get("problemTopics")
 
+    if problem_topics:
+       topics = [
+        topic["topicId"]
+        for topic in problem_topics
+    ]
+    else:
+       problem_id = submission["problemId"]
+       topics = problem_to_topics.get(problem_id, [])
     if not topics:
-        return user_mastery, [], []
+       return user_mastery, [], []
 
     # Calculate observed score
     observed = calculate_observed(
@@ -190,7 +205,7 @@ def process_submission(submission, user_mastery):
         test_cases_passed=submission.get("testCasesPassed", 0),
         total_test_cases=submission.get("totalTestCases", 1),
         submission_count=submission.get("submissionCount", 1),
-        normalised_score=submission.get("normalisedScore", 0.0)
+        normalised_score=submission.get("normalisedScore", 0.0),
     )
 
     updated_mastery = dict(user_mastery)
@@ -208,6 +223,7 @@ def process_submission(submission, user_mastery):
         # Check if topic just got mastered
         was_mastered = current_p_l >= MASTERY_THRESHOLD
         now_mastered = new_p_l >= MASTERY_THRESHOLD
+
         if now_mastered and not was_mastered:
             mastered_topics.append(topic)
 
@@ -216,7 +232,7 @@ def process_submission(submission, user_mastery):
             "previous_p_l": current_p_l,
             "new_p_l": new_p_l,
             "mastered": now_mastered,
-            "observed_score": observed
+            "observed_score": observed,
         })
 
     return updated_mastery, mastered_topics, results
