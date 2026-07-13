@@ -1,27 +1,5 @@
-import json
-import os
-from collections import defaultdict
 import numpy as np
 
-# Load problem->topic mapping. Absolute path so this works regardless of the
-# working directory the process is launched from. Falls back to an empty
-# mapping (with a warning) instead of crashing at import time if the file is
-# missing, so an unrelated import chain doesn't take down the whole app.
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_pt_edges_path = os.path.join(_BASE_DIR, "data", "problem_topic_edges_normalized.json")
-try:
-    with open(_pt_edges_path) as f:
-        pt_edges = json.load(f)
-except FileNotFoundError:
-    print(f"[!] {_pt_edges_path} not found -- bkt.py starting with an EMPTY "
-          f"problem->topic mapping. process_submission() will find zero "
-          f"topics for every problem until this file exists.")
-    pt_edges = []
-problem_to_topics = defaultdict(list)
-for edge in pt_edges:
-    problem_to_topics[edge["source"]].append(edge["target"])
-
-print(f"Loaded topic mappings for {len(problem_to_topics)} problems")
 
 BKT_PARAMS = {
     "P_T": 0.1,   # probability of learning after one attempt
