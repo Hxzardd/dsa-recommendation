@@ -162,20 +162,29 @@ def process_hlr(submission, user_hlr_state):
 
     Args:
         submission: dict with userId, problemId, problemTopics,
-            verdict, hintsUsed, submissionCount,
-            normalisedScore, timestamp
+                    verdict, hintsUsed, submissionCount,
+                    normalisedScore, timestamp
         user_hlr_state: dict of {topic_slug: hlr_state} for this user
+
     Returns:
         updated_hlr_state, results
     """
-     # Use the topics supplied by the backend instead of looking them up
-     # from the static mapping.
-    topics = [
-       topic["topicId"]
-       for topic in submission.get("problemTopics", [])
-    ] 
+
+    # Use the topics supplied by the backend when available.
+    # Fall back to the static mapping for legacy callers.
+    problem_topics = submission.get("problemTopics")
+
+    if problem_topics:
+        topics = [
+            topic["topicId"]
+            for topic in problem_topics
+        ]
+    else:
+        problem_id = _get_problem_id(submission)
+        topics = problem_to_topics.get(problem_id, [])
+
     if not topics:
-       return user_hlr_state, []
+        return user_hlr_state, []
 
     performance = calculate_performance(
         verdict=submission["verdict"],
@@ -184,54 +193,51 @@ def process_hlr(submission, user_hlr_state):
         normalised_score=submission.get("normalisedScore", 0.0)
     )
 
-    current_time = submission.get("timestamp", datetime.now(timezone.utc).timestamp())
+    current_time = submission.get(
+        "timestamp",
+        datetime.now(timezone.utc).timestamp()
+    )
     now_dt = datetime.fromtimestamp(current_time, tz=timezone.utc)
 
     updated_state = dict(user_hlr_state)
     results = []
-
     for topic in topics:
-        current_state = user_hlr_state.get(topic, {})
-        current_half_life = current_state.get("half_life", MIN_HALF_LIFE)
-        last_review = current_state.get("last_review")
+     current_state = user_hlr_state.get(topic, {})
+     current_half_life = current_state.get("half_life", MIN_HALF_LIFE)
+     last_review = current_state.get("last_review")
 
-        if last_review:
-            # Same naive/aware fix as calculate_urgency() -- a stored
-            # last_review without timezone info would otherwise crash
-            # this subtraction on every subsequent submission for that
-            # user/topic, blocking ALL their future HLR updates.
-            last_review_dt = _parse_aware(last_review)
-            days_since = (now_dt - last_review_dt).total_seconds() / 86400
-        else:
-            days_since = 0
+     if last_review:
+        last_review_dt = _parse_aware(last_review)
+        days_since = (now_dt - last_review_dt).total_seconds() / 86400
+     else:
+        days_since = 0
 
-        new_half_life = update_half_life(current_half_life, performance, days_since)
+     new_half_life = update_half_life(
+        current_half_life,
+        performance,
+        days_since,
+     )
 
-        # p_recall reflects recall probability JUST BEFORE this submission
-        # (current_half_life + days_since, i.e. pre-update state) -- shows
-        # how urgently this review was needed. Using new_half_life with
-        # days_since_review=0 here would always return 1.0 regardless of
-        # half_life, making every stored p_recall an uninformative constant.
-        p_recall = recall_probability(current_half_life, days_since)
+     p_recall = recall_probability(current_half_life, days_since)
 
-        next_review_days = round(-new_half_life * math.log2(0.7), 1)
+     next_review_days = round(-new_half_life * math.log2(0.7), 1)
 
-        new_state = {
-            "half_life": new_half_life,
-            "last_review": now_dt.isoformat(),
-            "performance": performance,
-            "p_recall": p_recall,
-            "next_review_days": next_review_days
-        }
+     new_state = {
+        "half_life": new_half_life,
+        "last_review": now_dt.isoformat(),
+        "performance": performance,
+        "p_recall": p_recall,
+        "next_review_days": next_review_days,
+     }
 
-        updated_state[topic] = new_state
-        results.append({
-            "topic": topic,
-            "performance": performance,
-            "previous_half_life": current_half_life,
-            "new_half_life": new_half_life,
-            "p_recall": p_recall,
-            "next_review_days": next_review_days
-        })
+     updated_state[topic] = new_state
 
+     results.append({
+        "topic": topic,
+        "performance": performance,
+        "previous_half_life": current_half_life,
+        "new_half_life": new_half_life,
+        "p_recall": p_recall,
+        "next_review_days": next_review_days,
+     })
     return updated_state, results

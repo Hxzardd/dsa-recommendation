@@ -1,5 +1,33 @@
+import json
+import os
+from collections import defaultdict
 import numpy as np
 
+# Load problem->topic mapping
+_BASE_DIR = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+_pt_edges_path = os.path.join(
+    _BASE_DIR,
+    "data",
+    "problem_topic_edges_normalized.json",
+)
+
+try:
+    with open(_pt_edges_path) as f:
+        pt_edges = json.load(f)
+except FileNotFoundError:
+    print(
+        f"[!] {_pt_edges_path} not found -- bkt.py starting with an EMPTY "
+        f"problem->topic mapping."
+    )
+    pt_edges = []
+
+problem_to_topics = defaultdict(list)
+for edge in pt_edges:
+    problem_to_topics[edge["source"]].append(edge["target"])
+
+print(f"Loaded topic mappings for {len(problem_to_topics)} problems")
 
 BKT_PARAMS = {
     "P_T": 0.1,   # probability of learning after one attempt
@@ -157,13 +185,18 @@ def process_submission(submission, user_mastery):
     """
     # Use the topics supplied by the backend instead of looking them up
     # from the static mapping.
-    topics = [
-        topic["topicId"]
-        for topic in submission.get("problemTopics", [])
-    ]
+    problem_topics = submission.get("problemTopics")
 
+    if problem_topics:
+       topics = [
+        topic["topicId"]
+        for topic in problem_topics
+    ]
+    else:
+       problem_id = submission["problemId"]
+       topics = problem_to_topics.get(problem_id, [])
     if not topics:
-        return user_mastery, [], []
+       return user_mastery, [], []
 
     # Calculate observed score
     observed = calculate_observed(
