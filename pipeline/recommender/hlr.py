@@ -161,18 +161,21 @@ def process_hlr(submission, user_hlr_state):
     Process a submission and update HLR state for all related topics.
 
     Args:
-        submission: dict with userId, problemId, verdict, hintsUsed,
-                    submissionCount, normalisedScore, timestamp
+        submission: dict with userId, problemId, problemTopics,
+            verdict, hintsUsed, submissionCount,
+            normalisedScore, timestamp
         user_hlr_state: dict of {topic_slug: hlr_state} for this user
-
     Returns:
         updated_hlr_state, results
     """
-    problem_id = _get_problem_id(submission)
-    topics = problem_to_topics.get(problem_id, [])
-
+     # Use the topics supplied by the backend instead of looking them up
+     # from the static mapping.
+    topics = [
+       topic["topicId"]
+       for topic in submission.get("problemTopics", [])
+    ] 
     if not topics:
-        return user_hlr_state, []
+       return user_hlr_state, []
 
     performance = calculate_performance(
         verdict=submission["verdict"],
