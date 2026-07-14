@@ -3,7 +3,7 @@ import psycopg2
 from pathlib import Path
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
-from psycopg2.pool import ThreadedConnectionPool
+from psycopg2.pool import ThreadedConnectionPool, PoolError
 
 # Walk up from this file to find the repo root .env -- works regardless
 # of what directory uvicorn is launched from.
@@ -31,7 +31,12 @@ def get_connection():
             dsn=DATABASE_URL,
         )
 
-    return db_pool.getconn()
+    try:
+        return db_pool.getconn()
+    except PoolError as e:
+        raise RuntimeError(
+            "Database connection pool exhausted. Please try again."
+        ) from e
 
 def release_connection(conn):
     if db_pool is not None:
