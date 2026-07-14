@@ -1,20 +1,29 @@
 from datetime import datetime, timezone
-from fastapi import Header, HTTPException
+
+from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
 from psycopg2.extras import RealDictCursor
 
-from database.postgres.db import get_connection
+from database.postgres.db import get_connection, release_connection
 
 
-def verify_session(authorization: str = Header(None)):
-    if authorization is None:
-        raise HTTPException(401, "Missing Authorization header")
+PUBLIC_PATHS = {
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+}
 
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Invalid Authorization header")
 
-    token = authorization.replace("Bearer ", "")
+def verify_session_token(token: str):
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing token",
+        )
 
     conn = get_connection()
+
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
@@ -29,18 +38,54 @@ def verify_session(authorization: str = Header(None)):
             session = cur.fetchone()
 
             if session is None:
-                raise HTTPException(401, "Invalid session")
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid session",
+                )
 
             expires_at = session["expires_at"]
 
-            # Handle both naive and timezone-aware timestamps
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
 
             if expires_at <= datetime.now(timezone.utc):
-                raise HTTPException(401, "Session expired")
+                raise HTTPException(
+                    status_code=401,
+                    detail="Session expired",
+                )
 
             return session["user_id"]
 
     finally:
-        conn.close()
+        release_connection(conn)
+
+
+async def auth_middleware(request: Request, call_next):
+    if request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    authorization = request.headers.get("Authorization")
+
+    if authorization is None:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing Authorization header"},
+        )
+
+    if not authorization.startswith("Bearer "):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid Authorization header"},
+        )
+
+    token = authorization.split(" ", 1)[1]
+
+    try:
+        request.state.user_id = verify_session_token(token)
+    except HTTPException as e:
+        return JSONResponse(
+            status_code=e.status_code,
+            content={"detail": e.detail},
+        )
+
+    return await call_next(request)
