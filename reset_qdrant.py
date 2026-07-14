@@ -22,7 +22,7 @@ for _p in [Path(__file__).resolve().parent, *Path(__file__).resolve().parents]:
 
 import db_env
 
-COLLECTIONS = ["dsa_problems", "problems_full", "problems_rgcn"]
+COLLECTIONS = ["dsa_problems", "problems_full", "problems_rgcn", "problems_question", "problems_solution"]
 
 
 def main():

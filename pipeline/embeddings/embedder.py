@@ -400,15 +400,30 @@ def save_embedded(df: pd.DataFrame, output_dir: str) -> None:
 # Qdrant upload
 # ---------------------------------------------------------------------------
 
+
+_RETRYABLE = (
+    "WriteTimeout", "ReadTimeout", "ConnectTimeout",
+    "TimeoutException", "ConnectionError", "RemoteProtocolError",
+    "WriteError", "ReadError",
+)
+
+def _is_retryable(exc: Exception) -> bool:
+    name = type(exc).__name__
+    msg  = str(exc).lower()
+    if any(r in name for r in _RETRYABLE):
+        return True
+    if "responsehandlingexception" in name.lower() and (
+        "timeout" in msg or "write" in msg or "read" in msg
+    ):
+        return True
+    return False
+
 def _upsert_with_retry(client, collection: str, batch: list, max_retries: int = 4) -> None:
     """
-    Retries a single batch upsert with exponential backoff on transient
-    network errors (timeouts, connection resets). Qdrant's upsert() is
-    idempotent by point ID -- re-sending an already-successful batch after
-    a timeout just overwrites the same points with the same data, never
-    duplicates or corrupts anything. Without this, a single transient
-    WriteTimeout partway through a 2000+ point upload killed the entire
-    run with no way to resume except restarting from batch 0.
+    Retry a single batch upsert on TRANSIENT network errors only.
+    Permanent errors (403, dimension mismatch, missing collection)
+    are re-raised immediately -- fail fast, no retry.
+    Upsert is idempotent by point ID so retrying is always safe.
     """
     import time as _time
     last_exc = None
@@ -417,13 +432,16 @@ def _upsert_with_retry(client, collection: str, batch: list, max_retries: int = 
             client.upsert(collection_name=collection, points=batch)
             return
         except Exception as exc:
+            if not _is_retryable(exc):
+                raise
             last_exc = exc
             if attempt < max_retries - 1:
-                wait = 2 ** attempt   # 1s, 2s, 4s, 8s...
-                print(f"\n[!] Batch upload failed ({exc.__class__.__name__}), "
+                wait = 2 ** attempt
+                print(f"\n[!] Transient upload error ({exc.__class__.__name__}), "
                       f"retrying in {wait}s (attempt {attempt + 2}/{max_retries})...")
                 _time.sleep(wait)
     raise last_exc
+
 
 
 def upload_to_qdrant(

@@ -57,28 +57,53 @@ def _stable_point_id(problem_id: str) -> int:
 
 
 
-import time as _time
 
+# Errors that are safe to retry (transient network/transport issues).
+# Permanent errors (auth failure, wrong dimensions, missing collections,
+# bad config) must NOT be retried -- they need to fail fast so the user
+# sees the real problem immediately instead of waiting through 4 retries.
+_RETRYABLE = (
+    "WriteTimeout", "ReadTimeout", "ConnectTimeout",
+    "TimeoutException", "ConnectionError", "RemoteProtocolError",
+    "WriteError", "ReadError",
+)
+
+def _is_retryable(exc: Exception) -> bool:
+    name = type(exc).__name__
+    msg  = str(exc).lower()
+    if any(r in name for r in _RETRYABLE):
+        return True
+    # httpcore / httpx surface timeouts as ResponseHandlingException wrapping the real exc
+    if "responsehandlingexception" in name.lower() and (
+        "timeout" in msg or "write" in msg or "read" in msg
+    ):
+        return True
+    return False
 
 def _upsert_with_retry(client, collection: str, batch: list, max_retries: int = 4) -> None:
     """
-    Retry a single batch upsert with exponential backoff.
-    Qdrant upsert() is idempotent by point ID -- retrying a batch is safe.
-    Without this, a single WriteTimeout kills the entire ingest with no resume.
+    Retry a single batch upsert on TRANSIENT network errors only.
+    Permanent errors (403 auth, dimension mismatch, missing collection)
+    are re-raised immediately so the user sees them without delay.
+    Qdrant upsert() is idempotent by point ID -- retrying is always safe.
     """
+    import time as _time
     last_exc = None
     for attempt in range(max_retries):
         try:
             client.upsert(collection_name=collection, points=batch)
             return
         except Exception as exc:
+            if not _is_retryable(exc):
+                raise   # permanent error -- fail fast, no retry
             last_exc = exc
             if attempt < max_retries - 1:
                 wait = 2 ** attempt
-                print(f"\n[!] Batch upload failed ({exc.__class__.__name__}), "
+                print(f"\n[!] Transient upload error ({exc.__class__.__name__}), "
                       f"retrying in {wait}s (attempt {attempt + 2}/{max_retries})...")
                 _time.sleep(wait)
     raise last_exc
+
 
 
 def ingest_embeddings(client, collection, ids, vectors, payloads, batch_size=50):

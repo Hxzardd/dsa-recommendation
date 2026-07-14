@@ -230,6 +230,10 @@ def main(source_target: Path, manifest_path: Path):
 
     topic_nodes = [
         {
+            # sources.py load_curated_normalized() reads n.get("topic_slug") at line 230
+            # for CONCEPT_FEATURE_MODE=text. Also include topic_id as alias
+            # so graph_builder.py (which reads topic_id) still works.
+            "topic_slug": t,
             "topic_id":   t,
             "topic_name": t.replace("_", " ").title(),
         }
@@ -259,8 +263,12 @@ def main(source_target: Path, manifest_path: Path):
         if pair not in seen_pairs and rev not in seen_pairs:
             seen_pairs.add(pair)
             qg_tt_edges.append({
-                "source_topic_id":      e["source"],
-                "target_topic_id":      e["target"],
+                # sources.py load_curated_normalized() reads:
+                # e.get("source") or e.get("topic_slug_a") -- line 221
+                # e.get("target") or e.get("topic_slug_b") -- line 222
+                # Using "source"/"target" to match the primary lookup key.
+                "source":               e["source"],
+                "target":               e["target"],
                 "shared_problem_count": e["shared_problem_count"],
                 "jaccard":              e["jaccard"],
             })
