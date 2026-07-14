@@ -68,8 +68,8 @@ def load_offline_concept_graph(db=None) -> dict[str, list[ConceptConceptEdge]]:
         try:
             raw = json.loads(_TOPIC_TOPIC_JSON.read_text(encoding="utf-8-sig"))
             for e in raw:
-                src = str(e.get("source") or "")
-                tgt = str(e.get("target") or "")
+                src = str(e.get("source") or e.get("source_topic_id") or "")
+                tgt = str(e.get("target") or e.get("target_topic_id") or "")
                 if not src or not tgt:
                     continue
                 shared = int(e.get("shared_problem_count", 0))
