@@ -218,8 +218,10 @@ def load_curated_normalized() -> CuratedEdges:
     tt = []
     if C.GRAPH_TOPIC_TOPIC.exists():
         for e in _load_json(C.GRAPH_TOPIC_TOPIC):
-            src = str(e.get("source") or e.get("topic_slug_a") or "")
-            tgt = str(e.get("target") or e.get("topic_slug_b") or "")
+            src = str(e.get("source") or e.get("source_topic_id")
+                      or e.get("topic_slug_a") or "")
+            tgt = str(e.get("target") or e.get("target_topic_id")
+                      or e.get("topic_slug_b") or "")
             if src and tgt:
                 tt.append((src, tgt,
                            float(e.get("jaccard", 0.0)),
@@ -227,7 +229,8 @@ def load_curated_normalized() -> CuratedEdges:
     text = {}
     if C.GRAPH_TOPIC_NODES.exists():
         for n in _load_json(C.GRAPH_TOPIC_NODES):
-            text[str(n.get("topic_slug", ""))] = _topic_text(n)
+            slug = str(n.get("topic_slug") or n.get("topic_id") or "")
+            text[slug] = _topic_text(n)
     print(f"[OK] curated (normalized JSON): {len(pt)} HAS_TOPIC, {len(tt)} CO_OCCURS")
     return CuratedEdges(pt, tt, text)
 
@@ -273,7 +276,7 @@ def load_curated_neo4j() -> CuratedEdges:
 
 
 def _topic_text(n: dict) -> str:
-    slug = str(n.get("topic_slug", ""))
+    slug = str(n.get("topic_slug") or n.get("topic_id") or "")
     name = str(n.get("topic_name", "") or slug).strip()
     desc = str(n.get("short_description", "") or "").strip()
     # most descriptions are "DSA topic: x" placeholders -> name carries the signal

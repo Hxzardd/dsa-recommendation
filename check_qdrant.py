@@ -46,7 +46,7 @@ def main():
         print()
 
     print("=== Starter concept check ===")
-    STARTER = ["arrays", "strings", "hash_map", "sorting"]
+    STARTER = ["array", "string", "hash_map", "dp"]
     for topic in STARTER:
         from qdrant_client.models import Filter, FieldCondition, MatchAny
         points, _ = client.scroll(

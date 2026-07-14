@@ -24,7 +24,7 @@ for p in Path(__file__).resolve().parents:
 import db_env
 from qdrant_client.models import PayloadSchemaType
 
-COLLECTIONS = ["dsa_problems", "problems_full", "problems_rgcn"]
+COLLECTIONS = ["dsa_problems", "problems_full", "problems_rgcn", "problems_question", "problems_solution"]
 
 INDEXES = [
     ("topic_tags",       PayloadSchemaType.KEYWORD),

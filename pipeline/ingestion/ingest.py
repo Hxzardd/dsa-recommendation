@@ -13,6 +13,7 @@ Exported API:
 import json
 import re
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -34,6 +35,38 @@ from tag_inference import (
     pick_canonical_solution,
     extract_similar_problem_ids,
 )
+
+
+# ---------------------------------------------------------------------------
+# Canonical topic map -- built once at module load from Aashray's
+# source-target.txt. Maps title_slug -> [canonical_tag, ...]. If the file
+# doesn't exist yet (first run before generate_topic_edges), falls back to
+# an empty dict so ingestion still works, just with AI-inferred tags.
+# ---------------------------------------------------------------------------
+
+def _build_canonical_topic_map() -> dict:
+    _here = Path(__file__).resolve()
+    for _p in [_here.parent, *_here.parents]:
+        if (_p / "pyproject.toml").exists():
+            _source_target = _p / "data" / "source-target.txt"
+            if _source_target.exists():
+                raw = json.load(open(_source_target, encoding="utf-8"))
+                result = defaultdict(list)
+                for e in raw:
+                    src = (e.get("source") or "").strip()
+                    tgt = (e.get("target") or "").strip()
+                    if src and tgt:
+                        result[src].append(tgt)
+                print(f"[ingest] Loaded canonical topic map: "
+                      f"{len(result)} problems from source-target.txt")
+                return dict(result)
+            else:
+                print(f"[ingest] source-target.txt not found at {_source_target} "
+                      f"-- topic_tags will use AI-inferred values")
+                return {}
+    return {}
+
+_CANONICAL_TOPIC_MAP: dict = _build_canonical_topic_map()
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +141,17 @@ def transform_record(record: Dict[str, Any]) -> Dict[str, Any]:
     out["patterns"]            = infer_patterns(record)
     out["techniques"]          = infer_techniques(record)
     out["skill_tags"]          = infer_skill_tags(record)
+
+    # FIX (Darsheel/Greptile): Replace AI-inferred topic_tags with canonical
+    # tags from Aashray's source-target.txt. The AI inference produced ~487
+    # implementation-level tags that don't match the backend schema's 72
+    # canonical topics. _CANONICAL_TOPIC_MAP is built once at module load
+    # and maps title_slug -> [canonical_tag, ...]. If the problem has no
+    # canonical mapping, we keep whatever was inferred (fallback) so the
+    # field is never empty for the embedding pipeline.
+    slug = record.get("title_slug") or ""
+    if slug in _CANONICAL_TOPIC_MAP:
+        out["topic_tags"] = _CANONICAL_TOPIC_MAP[slug]
 
     # -- Relational ------------------------------------------------------------
     out["similar_problem_ids"] = extract_similar_problem_ids(record)
@@ -324,7 +368,7 @@ if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser()
     p.add_argument("--input",   "-i", default=None)
-    p.add_argument("--output",  "-o", default="./vector_pool")
+    p.add_argument("--output",  "-o", default="./data/vector_pool")
     p.add_argument("--preview", "-p", type=int, default=3)
     args = p.parse_args()
 
@@ -337,3 +381,4 @@ if __name__ == "__main__":
     if args.preview > 0:
         preview(df, args.preview)
     save_outputs(df, args.output)
+    

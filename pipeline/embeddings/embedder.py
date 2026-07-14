@@ -25,10 +25,27 @@ Dependencies:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 from typing import List, Optional
+
+# This file lives at pipeline/embeddings/ -- walk up to the repo root to
+# find db_env.py, the one canonical .env-loading module. Only needed for
+# the --qdrant-api-key default below; embedder.py still works fine if
+# db_env.py can't be found (e.g. run completely standalone outside the
+# repo) -- it just falls back to no default API key, same as before.
+try:
+    _here = Path(__file__).resolve()
+    for _p in [_here.parent, *_here.parents]:
+        if (_p / "pyproject.toml").exists():
+            sys.path.insert(0, str(_p))
+            break
+    import db_env
+    _DEFAULT_QDRANT_API_KEY = db_env.QDRANT_API_KEY
+except ImportError:
+    _DEFAULT_QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY")
 
 import numpy as np
 import pandas as pd
@@ -383,12 +400,57 @@ def save_embedded(df: pd.DataFrame, output_dir: str) -> None:
 # Qdrant upload
 # ---------------------------------------------------------------------------
 
+
+_RETRYABLE = (
+    "WriteTimeout", "ReadTimeout", "ConnectTimeout",
+    "TimeoutException", "ConnectionError", "RemoteProtocolError",
+    "WriteError", "ReadError",
+)
+
+def _is_retryable(exc: Exception) -> bool:
+    name = type(exc).__name__
+    msg  = str(exc).lower()
+    if any(r in name for r in _RETRYABLE):
+        return True
+    if "responsehandlingexception" in name.lower():
+        return True
+    return False
+
+def _upsert_with_retry(client, collection: str, batch: list, max_retries: int = 4) -> None:
+    """
+    Retry a single batch upsert on TRANSIENT network errors only.
+    Permanent errors (403, dimension mismatch, missing collection)
+    are re-raised immediately -- fail fast, no retry.
+    Upsert is idempotent by point ID so retrying is always safe.
+    """
+    import time as _time
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            client.upsert(collection_name=collection, points=batch)
+            return
+        except Exception as exc:
+            if not _is_retryable(exc):
+                raise
+            last_exc = exc
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"\n[!] Transient upload error ({exc.__class__.__name__}), "
+                      f"retrying in {wait}s (attempt {attempt + 2}/{max_retries})...")
+                _time.sleep(wait)
+    raise last_exc
+
+
+
 def upload_to_qdrant(
     df: pd.DataFrame,
     url: str,
     collection: str,
     embedding_col: str = "question_solution_embedding",
-    batch_size: int = 100,
+    batch_size: int = 50,
+    api_key: str = None,
+    upload_timeout: int = 120,
+    max_retries: int = 4,
 ) -> None:
     try:
         from qdrant_client import QdrantClient
@@ -399,20 +461,44 @@ def upload_to_qdrant(
         print("[X] qdrant-client not installed. Run: uv pip install qdrant-client")
         return
 
+    # api_key=None is fine for a local Docker instance (no auth). For a
+    # cloud Qdrant instance (Qdrant Cloud, etc.) this must be set -- passed
+    # explicitly here rather than assumed, so a local run and a cloud run
+    # both work with the same code path.
+    #
+    # Two different timeouts on purpose: a SHORT one (5s) just to fail
+    # fast if Qdrant is completely unreachable, and a much LONGER one
+    # (upload_timeout, default 120s) for the actual client used to upload
+    # data. The two are unrelated operations with very different latency
+    # needs -- a single 5s timeout reused for both was the actual cause of
+    # WriteTimeout crashes partway through large batch uploads to a cloud
+    # instance: get_collections() is a tiny call that returns in
+    # milliseconds even with a generous timeout ceiling, but upserting a
+    # 50-100 point batch (each up to 1920 floats) over a real network
+    # connection to a cloud region genuinely needs more than 5 seconds,
+    # especially under any network variance.
     try:
-        client = QdrantClient(url=url, timeout=5)
-        client.get_collections()   # fast connectivity check
+        probe = QdrantClient(url=url, api_key=api_key, timeout=5)
+        probe.get_collections()   # fast connectivity check only
     except Exception as e:
         print(f'[X] Cannot connect to Qdrant at {url}')
         print(f'    Error: {e.__class__.__name__}: {str(e)[:120]}')
         print()
-        print('    Qdrant is not running. Start it with:')
+        if api_key is None:
+            print('    No API key was provided. If this is a cloud Qdrant')
+            print('    instance, set QDRANT_API_KEY in your .env or pass')
+            print('    --qdrant-api-key explicitly.')
+        print('    If this is meant to be a local instance, start it with:')
         print('      docker pull qdrant/qdrant')
         print('      docker run -p 6333:6333 qdrant/qdrant')
         print()
         print('    Then re-run the upload command (embeddings are already saved):')
         print(f'      uv run embedder.py --input vector_pool/vector_pool_embedded.parquet --output vector_pool --qdrant-url {url} --collection {collection}')
         return
+
+    # Separate client for the actual work, with the generous timeout --
+    # the probe above already confirmed Qdrant is reachable at all.
+    client = QdrantClient(url=url, api_key=api_key, timeout=upload_timeout)
 
     sample_col = df[embedding_col].dropna()
     if len(sample_col) == 0:
@@ -474,7 +560,7 @@ def upload_to_qdrant(
     t0 = time.time()
     for start in range(0, len(points), batch_size):
         batch = points[start:start + batch_size]
-        client.upsert(collection_name=collection, points=batch)
+        _upsert_with_retry(client, collection, batch, max_retries=max_retries)
         pct = min(100, int(100 * (start + len(batch)) / len(points)))
         print(f"\r  {pct}% ({start + len(batch)}/{len(points)})", end="", flush=True)
 
@@ -499,8 +585,22 @@ def parse_args():
     p.add_argument("--resume",     action="store_true",
                    help="Resume from checkpoint -- skips already-embedded rows")
     p.add_argument("--qdrant-url",    default=None,
-                   help="Qdrant URL e.g. http://localhost:6333 (optional)")
+                   help="Qdrant URL e.g. http://localhost:6333 or a cloud "
+                        "Qdrant URL (optional)")
+    p.add_argument("--qdrant-api-key", default=_DEFAULT_QDRANT_API_KEY,
+                   help="Qdrant API key -- required for cloud Qdrant, "
+                        "unnecessary for a local unauthenticated instance. "
+                        "Defaults to the QDRANT_API_KEY environment variable.")
     p.add_argument("--collection",    default="dsa_problems")
+    p.add_argument("--qdrant-upload-batch-size", type=int, default=50,
+                   help="Points per Qdrant upsert call (lower this if you "
+                        "still see WriteTimeout errors on a slow connection)")
+    p.add_argument("--qdrant-upload-timeout", type=int, default=120,
+                   help="Seconds to wait per upsert call before timing out "
+                        "(raise this for large batches over a cloud connection)")
+    p.add_argument("--qdrant-max-retries", type=int, default=4,
+                   help="Retry attempts per batch on transient network errors, "
+                        "with exponential backoff")
     p.add_argument("--qdrant-vector", default="question_solution_embedding",
                    choices=["question_embedding", "solution_embedding",
                             "question_solution_embedding"])
@@ -554,6 +654,10 @@ def main():
             url=args.qdrant_url,
             collection=args.collection,
             embedding_col=args.qdrant_vector,
+            api_key=args.qdrant_api_key,
+            batch_size=args.qdrant_upload_batch_size,
+            upload_timeout=args.qdrant_upload_timeout,
+            max_retries=args.qdrant_max_retries,
         )
 
     print("\n" + "="*62)

@@ -56,7 +56,55 @@ def _stable_point_id(problem_id: str) -> int:
         return int(hashlib.sha256(problem_id.encode()).hexdigest(), 16) & 0x7FFF_FFFF_FFFF_FFFF
 
 
-def ingest_embeddings(client, collection, ids, vectors, payloads, batch_size=128):
+
+
+# Errors that are safe to retry (transient network/transport issues).
+# Permanent errors (auth failure, wrong dimensions, missing collections,
+# bad config) must NOT be retried -- they need to fail fast so the user
+# sees the real problem immediately instead of waiting through 4 retries.
+_RETRYABLE = (
+    "WriteTimeout", "ReadTimeout", "ConnectTimeout",
+    "TimeoutException", "ConnectionError", "RemoteProtocolError",
+    "WriteError", "ReadError",
+)
+
+def _is_retryable(exc: Exception) -> bool:
+    name = type(exc).__name__
+    msg  = str(exc).lower()
+    if any(r in name for r in _RETRYABLE):
+        return True
+    # httpcore / httpx surface transport/network errors as ResponseHandlingException wrapping the real exc
+    if "responsehandlingexception" in name.lower():
+        return True
+    return False
+
+def _upsert_with_retry(client, collection: str, batch: list, max_retries: int = 4) -> None:
+    """
+    Retry a single batch upsert on TRANSIENT network errors only.
+    Permanent errors (403 auth, dimension mismatch, missing collection)
+    are re-raised immediately so the user sees them without delay.
+    Qdrant upsert() is idempotent by point ID -- retrying is always safe.
+    """
+    import time as _time
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            client.upsert(collection_name=collection, points=batch)
+            return
+        except Exception as exc:
+            if not _is_retryable(exc):
+                raise   # permanent error -- fail fast, no retry
+            last_exc = exc
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"\n[!] Transient upload error ({exc.__class__.__name__}), "
+                      f"retrying in {wait}s (attempt {attempt + 2}/{max_retries})...")
+                _time.sleep(wait)
+    raise last_exc
+
+
+
+def ingest_embeddings(client, collection, ids, vectors, payloads, batch_size=50):
     from qdrant_client.models import (
         Distance, VectorParams, PointStruct, OptimizersConfigDiff,
     )
@@ -98,8 +146,7 @@ def ingest_embeddings(client, collection, ids, vectors, payloads, batch_size=128
     ]
     t0 = time.time()
     for start in range(0, len(points), batch_size):
-        client.upsert(collection_name=collection,
-                      points=points[start:start + batch_size])
+        _upsert_with_retry(client, collection, points[start:start + batch_size])
         pct = min(100, int(100 * (start + batch_size) / max(len(points), 1)))
         print(f"\r  {pct}%", end="", flush=True)
     client.update_collection(
@@ -294,7 +341,7 @@ def main():
     try:
         from qdrant_client import QdrantClient
         client = QdrantClient(url=args.qdrant_url,
-                              api_key=C.QDRANT_API_KEY, timeout=30)
+                              api_key=C.QDRANT_API_KEY, timeout=120)
         client.get_collections()
     except Exception as e:
         print(f"[X] cannot reach Qdrant at {args.qdrant_url}: "

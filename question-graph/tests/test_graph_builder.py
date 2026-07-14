@@ -28,6 +28,17 @@ class BuildGraphTests(unittest.TestCase):
         self.assertTrue(graph.has_edge("problem:p1", "topic:arrays"))
         self.assertTrue(graph.has_edge("topic:arrays", "topic:sorting"))
 
+    def test_builds_edges_with_source_target_format(self):
+        graph = graph_builder.build_graph(
+            self.problems,
+            self.topics,
+            [{"problem_id": "p1", "topic_id": "arrays"}],
+            [{"source": "arrays", "target": "sorting"}],
+        )
+
+        self.assertTrue(graph.has_edge("problem:p1", "topic:arrays"))
+        self.assertTrue(graph.has_edge("topic:arrays", "topic:sorting"))
+
     def test_reports_all_unresolved_edge_endpoints(self):
         with self.assertRaises(ValueError) as context:
             graph_builder.build_graph(
