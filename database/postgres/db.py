@@ -19,19 +19,23 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set")
 
-db_pool = ThreadedConnectionPool(
-    minconn=1,
-    maxconn=10,
-    dsn=DATABASE_URL,
-)
-
+db_pool = None
 
 def get_connection():
+    global db_pool
+
+    if db_pool is None:
+        db_pool = ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=DATABASE_URL,
+        )
+
     return db_pool.getconn()
 
-
 def release_connection(conn):
-    db_pool.putconn(conn)
+    if db_pool is not None:
+        db_pool.putconn(conn)
 
 def get_user_mastery(user_id: str) -> dict:
     conn = get_connection()
