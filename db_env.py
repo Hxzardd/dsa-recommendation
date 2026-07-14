@@ -106,8 +106,21 @@ NEO4J_INSTANCENAME = os.environ.get("NEO4J_INSTANCENAME") or os.environ.get("AUR
 
 def qdrant_client(timeout: int = 10):
     """Returns a QdrantClient built from the credentials above."""
+    import warnings
     from qdrant_client import QdrantClient
-    return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=timeout)
+
+    # Suppress the "Failed to obtain server version" UserWarning that
+    # Qdrant Cloud triggers on Windows -- it's cosmetic (the client works
+    # fine) but noisy. We suppress it rather than using check_compatibility=False
+    # because that parameter was added in a later qdrant-client version and
+    # crashes on older installs.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return QdrantClient(
+            url=QDRANT_URL,
+            api_key=QDRANT_API_KEY,
+            timeout=timeout,
+        )
 
 
 def neo4j_driver():

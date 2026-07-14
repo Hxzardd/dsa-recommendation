@@ -56,7 +56,32 @@ def _stable_point_id(problem_id: str) -> int:
         return int(hashlib.sha256(problem_id.encode()).hexdigest(), 16) & 0x7FFF_FFFF_FFFF_FFFF
 
 
-def ingest_embeddings(client, collection, ids, vectors, payloads, batch_size=128):
+
+import time as _time
+
+
+def _upsert_with_retry(client, collection: str, batch: list, max_retries: int = 4) -> None:
+    """
+    Retry a single batch upsert with exponential backoff.
+    Qdrant upsert() is idempotent by point ID -- retrying a batch is safe.
+    Without this, a single WriteTimeout kills the entire ingest with no resume.
+    """
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            client.upsert(collection_name=collection, points=batch)
+            return
+        except Exception as exc:
+            last_exc = exc
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"\n[!] Batch upload failed ({exc.__class__.__name__}), "
+                      f"retrying in {wait}s (attempt {attempt + 2}/{max_retries})...")
+                _time.sleep(wait)
+    raise last_exc
+
+
+def ingest_embeddings(client, collection, ids, vectors, payloads, batch_size=50):
     from qdrant_client.models import (
         Distance, VectorParams, PointStruct, OptimizersConfigDiff,
     )
@@ -98,8 +123,7 @@ def ingest_embeddings(client, collection, ids, vectors, payloads, batch_size=128
     ]
     t0 = time.time()
     for start in range(0, len(points), batch_size):
-        client.upsert(collection_name=collection,
-                      points=points[start:start + batch_size])
+        _upsert_with_retry(client, collection, points[start:start + batch_size])
         pct = min(100, int(100 * (start + batch_size) / max(len(points), 1)))
         print(f"\r  {pct}%", end="", flush=True)
     client.update_collection(
@@ -294,7 +318,7 @@ def main():
     try:
         from qdrant_client import QdrantClient
         client = QdrantClient(url=args.qdrant_url,
-                              api_key=C.QDRANT_API_KEY, timeout=30)
+                              api_key=C.QDRANT_API_KEY, timeout=120)
         client.get_collections()
     except Exception as e:
         print(f"[X] cannot reach Qdrant at {args.qdrant_url}: "

@@ -18,7 +18,36 @@ Resolution order for the embedded parquet, in order of preference:
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Qdrant / Neo4j credentials -- imported from db_env.py, the ONE place in
+# the whole repo that reads .env. Never define QDRANT_URL/NEO4J_PASSWORD/etc
+# locally in this file -- that would create a second source of truth that
+# can silently drift from db_env.py's values.
+# ---------------------------------------------------------------------------
+
+def _find_repo_root(start: Path) -> Path:
+    for p in [start, *start.parents]:
+        if (p / "pyproject.toml").exists():
+            return p
+    return start
+
+_REPO_ROOT_FOR_DB_ENV = _find_repo_root(Path(__file__).resolve().parent)
+if str(_REPO_ROOT_FOR_DB_ENV) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT_FOR_DB_ENV))
+
+from db_env import (
+    QDRANT_URL, QDRANT_API_KEY, QDRANT_CLUSTER_ID, QDRANT_VERSION,
+    QDRANT_CLOUD_PROVIDER, QDRANT_CLOUD_REGION,
+    NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE,
+    NEO4J_INSTANCEID, NEO4J_INSTANCENAME,
+)
+# Backward-compat alias: existing code in this repo (sources.py etc) reads
+# C.NEO4J_USER -- db_env.py's canonical name is NEO4J_USERNAME (matching
+# Neo4j Aura's own credential export naming). Keep both working.
+NEO4J_USER = NEO4J_USERNAME
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +103,8 @@ CONCEPT_TEXT_MODEL    = os.getenv("RGCN_CONCEPT_TEXT_MODEL", "BAAI/bge-small-en-
 
 # ---------------------------------------------------------------------------
 # Graph DB (Neo4j) -- source of curated concept edges when GRAPH_SOURCE=neo4j
+# NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD/NEO4J_DATABASE are imported from
+# db_env.py at the top of this file -- not redefined here.
 # ---------------------------------------------------------------------------
 
 NEO4J_URI      = os.getenv("NEO4J_URI", "bolt://localhost:7687")
@@ -98,7 +129,8 @@ OUTPUT_PARQUET = _p("RGCN_OUTPUT_PARQUET", "data", "vector_pool", "vector_pool_r
 
 
 # ---------------------------------------------------------------------------
-# Qdrant
+# Qdrant -- QDRANT_URL/QDRANT_API_KEY imported from db_env.py at the top of
+# this file. Only collection NAMES (not credentials) are defined here.
 # ---------------------------------------------------------------------------
 
 QDRANT_URL                  = os.getenv("QDRANT_URL", "http://localhost:6333")
