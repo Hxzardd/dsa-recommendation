@@ -3,6 +3,7 @@ import psycopg2
 from pathlib import Path
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+from psycopg2.pool import ThreadedConnectionPool, PoolError
 
 # Walk up from this file to find the repo root .env -- works regardless
 # of what directory uvicorn is launched from.
@@ -13,15 +14,33 @@ for _p in [_here.parent, *_here.parents]:
         break
 else:
     load_dotenv()  # fallback
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set")
+
+db_pool = None
 
 def get_connection():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL environment variable is not set")
-    return psycopg2.connect(DATABASE_URL)
+    global db_pool
 
+    if db_pool is None:
+        db_pool = ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=DATABASE_URL,
+        )
+
+    try:
+        return db_pool.getconn()
+    except PoolError as e:
+        raise RuntimeError(
+            "Database connection pool exhausted. Please try again."
+        ) from e
+
+def release_connection(conn):
+    if db_pool is not None:
+        db_pool.putconn(conn)
 
 def get_user_mastery(user_id: str) -> dict:
     conn = get_connection()
@@ -37,7 +56,7 @@ def get_user_mastery(user_id: str) -> dict:
                 for row in rows
             }
     finally:
-        conn.close()
+     release_connection(conn)
 
 
 def get_user_hlr(user_id: str) -> dict:
@@ -59,7 +78,7 @@ def get_user_hlr(user_id: str) -> dict:
                 for row in rows
             }
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def save_user_hlr(user_id: str, hlr_state: dict):
@@ -83,7 +102,7 @@ def save_user_hlr(user_id: str, hlr_state: dict):
                 ))
         conn.commit()
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def save_user_mastery(user_id: str, mastery: dict):
@@ -105,4 +124,4 @@ def save_user_mastery(user_id: str, mastery: dict):
                 """, (user_id, topic_id, mastery_score))
         conn.commit()
     finally:
-        conn.close()
+        release_connection(conn)

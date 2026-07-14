@@ -5,7 +5,7 @@ from pipeline.recommender.bkt import (
     process_submission, calculate_observed, update_bkt,
     MASTERY_THRESHOLD, DEFAULT_P_L,
 )
-from database.postgres.db import get_connection, save_user_hlr
+from database.postgres.db import get_connection, release_connection, save_user_hlr
 from psycopg2.extras import RealDictCursor
 
 def user_exists(user_id: str) -> bool:
@@ -18,7 +18,7 @@ def user_exists(user_id: str) -> bool:
             )
             return cur.fetchone() is not None
     finally:
-        conn.close()
+        release_connection(conn)
 
 class ProviderError(Exception):
     """
@@ -43,7 +43,7 @@ def get_user_cf_handle(user_id: str):
             row = cur.fetchone()
             return row[0] if row else None
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def get_existing_hlr_topics(user_id: str) -> set:
@@ -58,7 +58,7 @@ def get_existing_hlr_topics(user_id: str) -> set:
             rows = cur.fetchall()
             return {row["topic_id"] for row in rows}
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def get_cf_submissions(cf_handle: str):
@@ -170,7 +170,7 @@ def get_user_lc_handle(user_id: str):
             row = cur.fetchone()
             return row[0] if row else None
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def get_lc_submissions(lc_handle: str):
@@ -222,7 +222,7 @@ def save_user_mastery(user_id: str, mastery: dict):
                 """, (user_id, topic_id, mastery_score))
         conn.commit()
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def _apply_bkt_update(current_mastery: dict, topics: list, verdict: str,

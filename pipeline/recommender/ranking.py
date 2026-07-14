@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from database.postgres.db import get_connection
+from database.postgres.db import get_connection, release_connection
 from pipeline.recommender.hlr import calculate_urgency
 
 WEIGHTS = {
@@ -33,7 +33,7 @@ def load_prerequisites() -> dict:
                 prereqs[topic_id].append(prereq_id)
             return prereqs
     finally:
-        conn.close()
+       release_connection(conn)
 
 _PREREQ_TABLE = None
 
