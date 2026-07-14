@@ -412,9 +412,7 @@ def _is_retryable(exc: Exception) -> bool:
     msg  = str(exc).lower()
     if any(r in name for r in _RETRYABLE):
         return True
-    if "responsehandlingexception" in name.lower() and (
-        "timeout" in msg or "write" in msg or "read" in msg
-    ):
+    if "responsehandlingexception" in name.lower():
         return True
     return False
 

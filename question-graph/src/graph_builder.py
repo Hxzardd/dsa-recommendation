@@ -95,8 +95,12 @@ def build_graph(problems, topics, problem_topic_edges, topic_topic_edges):
             )
 
     for e in topic_topic_edges:
-        source_topic = f"topic:{e['source_topic_id']}"
-        target_topic = f"topic:{e['target_topic_id']}"
+        source_id = e.get("source_topic_id") or e.get("source")
+        target_id = e.get("target_topic_id") or e.get("target")
+        if not source_id or not target_id:
+            raise KeyError(f"Topic edge {e!r} is missing source/target identifiers.")
+        source_topic = f"topic:{source_id}"
+        target_topic = f"topic:{target_id}"
 
         missing_nodes = [node for node in (source_topic, target_topic) if node not in graph]
         if missing_nodes:
