@@ -48,7 +48,7 @@ WEIGHT_PROXIMITY  = 0.45
 WEIGHT_POOL_AGREE = 0.25
 WEIGHT_URGENCY    = 0.20
 WEIGHT_SIMILARITY = 0.10
-
+WEIGHT_DIFFICULTY_ALIGNMENT = 0.05
 assert abs((WEIGHT_PROXIMITY + WEIGHT_POOL_AGREE + WEIGHT_URGENCY + WEIGHT_SIMILARITY) - 1.0) < 1e-9
 
 
@@ -95,11 +95,13 @@ class HeuristicRanker:
                  weight_proximity: float = WEIGHT_PROXIMITY,
                  weight_pool_agree: float = WEIGHT_POOL_AGREE,
                  weight_urgency: float = WEIGHT_URGENCY,
-                 weight_similarity: float = WEIGHT_SIMILARITY):
+                 weight_similarity: float = WEIGHT_SIMILARITY,
+                 weight_difficulty_alignment: float = WEIGHT_DIFFICULTY_ALIGNMENT):
         self.weight_proximity = weight_proximity
         self.weight_pool_agree = weight_pool_agree
         self.weight_urgency = weight_urgency
         self.weight_similarity = weight_similarity
+        self.weight_difficulty_alignment = weight_difficulty_alignment
 
     def score_one(self, row: dict) -> RankedCandidate:
         predicted_success = row.get("predicted_success")
@@ -116,13 +118,26 @@ class HeuristicRanker:
         similarity = row.get("best_pool_score")
         similarity_score = similarity if similarity is not None else 0.0
         similarity_score = max(0.0, min(1.0, similarity_score))   # clamp defensively
+        difficulty = row.get("difficulty_score")
+        avg_mastery = row.get("avg_mastery")
 
+        difficulty_alignment = 0.0
+
+        if difficulty is not None and avg_mastery is not None:
+          difficulty_alignment = 1.0 - min(
+            1.0,
+            abs(difficulty - avg_mastery),
+          )
         score = (
-            self.weight_proximity  * proximity +
-            self.weight_pool_agree * pool_agreement +
-            self.weight_urgency    * urgency_boost +
-            self.weight_similarity * similarity_score
-        )
+             self.weight_proximity  * proximity +
+             self.weight_pool_agree * pool_agreement +
+             self.weight_urgency    * urgency_boost +
+             self.weight_similarity * similarity_score
+               )
+
+        # Small tie-break bonus: prefer problems whose difficulty
+        #  matches the user's estimated mastery.
+        score += self.weight_difficulty_alignment * difficulty_alignment
 
         return RankedCandidate(
             row=row, score=score,
