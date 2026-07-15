@@ -248,7 +248,7 @@ class VectorPool(BasePool):
         qv = state.to_query_vector() if state is not None else None
         if qv is None:
             return []
-        return self._ann(qv, n, exclude, graph=graph)
+        return self._ann(qv, n, exclude, graph=graph, mix=mix)
 
 
 # registry so the pool generation layer can build them by name
