@@ -121,22 +121,22 @@ class HeuristicRanker:
         difficulty = row.get("difficulty_score")
         avg_mastery = row.get("avg_mastery")
 
-        difficulty_alignment = 1.0
+        difficulty_alignment = 0.0
 
         if difficulty is not None and avg_mastery is not None:
           difficulty_alignment = 1.0 - min(
-           1.0,
-           abs(difficulty - avg_mastery)
+            1.0,
+            abs(difficulty - avg_mastery),
           )
         score = (
-    self.weight_proximity  * proximity +
-    self.weight_pool_agree * pool_agreement +
-    self.weight_urgency    * urgency_boost +
-    self.weight_similarity * similarity_score
-)
+             self.weight_proximity  * proximity +
+             self.weight_pool_agree * pool_agreement +
+             self.weight_urgency    * urgency_boost +
+             self.weight_similarity * similarity_score
+               )
 
-# Small tie-break bonus: prefer problems whose difficulty
-# matches the user's estimated mastery.
+        # Small tie-break bonus: prefer problems whose difficulty
+        #  matches the user's estimated mastery.
         score += self.weight_difficulty_alignment * difficulty_alignment
 
         return RankedCandidate(
