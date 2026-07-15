@@ -96,7 +96,13 @@ class TransferPool(BasePool):
         exclude = self._exclude_ids(graph)
         qv = state.to_query_vector() if state is not None else None
         if qv is not None:
-            return self._ann(qv, n, exclude, graph=graph)
+            return self._ann(
+    qv,
+    n,
+    exclude,
+    graph=graph,
+    mix=mix,
+)
         # graph-only fallback: co-occurring concepts of what they know
         cooccur = []
         for edges in graph.cc_edges.values():

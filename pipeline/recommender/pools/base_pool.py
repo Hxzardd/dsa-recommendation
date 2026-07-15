@@ -139,6 +139,79 @@ class BasePool:
                 out.append(c)
         return out
 
+    def _apply_difficulty_mix(
+     self,
+     candidates: list[Candidate],
+     n: int,
+     mix: Optional[dict],
+ ) -> list[Candidate]:
+     """
+    Apply the adaptive controller's easy/medium/hard mix while
+    preserving ANN similarity order.
+    """
+     if mix is None:
+        return candidates[:n]
+
+     easy = []
+     medium = []
+     hard = []
+
+     for c in candidates:
+        if c.difficulty_score is None:
+            medium.append(c)
+        elif c.difficulty_score < EASY_BAND[1]:
+            easy.append(c)
+        elif c.difficulty_score < MED_BAND[1]:
+            medium.append(c)
+        else:
+            hard.append(c)
+
+     buckets = {
+        "easy": easy,
+        "medium": medium,
+         "hard": hard,
+    }
+
+     bands = list(self.ALLOWED_BANDS)
+
+     sub = {b: max(0.0, mix.get(b, 0.0)) for b in self.ALLOWED_BANDS}
+     total = sum(sub.values())
+
+     if  total <= 0:
+       sub = {b: 1.0 / len(self.ALLOWED_BANDS) for b in self.ALLOWED_BANDS}
+     else:
+       sub = {b: v / total for b, v in sub.items()}
+
+     quotas = {}
+     remaining = n
+
+     for i, band in enumerate(bands):
+      if i == len(bands) - 1:
+        quotas[band] = remaining
+      else:
+        q = round(sub.get(band, 0.0) * n)
+        q = min(q, remaining)
+        quotas[band] = q
+        remaining -= q
+
+     selected = []
+
+     for band in bands:
+         take = min(quotas[band], len(buckets[band]))
+         selected.extend(buckets[band][:take])
+         buckets[band] = buckets[band][take:]
+
+     remaining = n - len(selected)
+
+     leftovers = []
+     for band in bands:
+      leftovers.extend(buckets[band])
+     selected.extend(leftovers[:remaining])
+
+     return selected[:n]
+
+
+
     def _draw_with_mix(self, concept_slugs, n, exclude,
                        mix: Optional[dict] = None,
                        graph: Optional[UserGraph] = None) -> list[Candidate]:
@@ -241,7 +314,7 @@ class BasePool:
                 break
         return out
 
-    def _ann(self, query_vec, n, exclude, graph: Optional[UserGraph] = None) -> list[Candidate]:
+    def _ann(self, query_vec,  n, exclude, graph: Optional[UserGraph] = None,  mix: Optional[dict] = None,) -> list[Candidate]:
         """
         ANN search over the user/query vector on the full collection.
 
@@ -258,7 +331,7 @@ class BasePool:
             hits = self.qdrant.query_points(
                 collection_name=self.collection,
                 query=query_vec,
-                limit=n * 3, with_payload=True, with_vectors=False,
+                limit=max(n * 5, 30), with_payload=True, with_vectors=False,
             ).points
         except Exception:
             return []
@@ -275,4 +348,5 @@ class BasePool:
             ))
         out = self._self_filter_locked(out, graph)
         out = self._self_filter_difficulty_relevance(out, graph)
-        return out[:n]
+        out = self._apply_difficulty_mix(out, n, mix)
+        return out
