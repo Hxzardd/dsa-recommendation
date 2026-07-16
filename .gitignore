@@ -24,6 +24,9 @@ qdrant_storage_v2/
 # Vector pool outputs
 data/vector_pool/
 vector_pool/
+.claude
+.postman
+POSTMAN_GUIDE.md
 
 # RGCN outputs
 pipeline/graphs/rgcn_artifacts/

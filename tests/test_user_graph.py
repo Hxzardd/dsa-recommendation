@@ -42,7 +42,7 @@ import sys
 import time
 import types
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -224,6 +224,31 @@ def _gap_row(gap_name, severity=0.7):
 # ===========================================================================
 
 class TestGraphAssembly(unittest.TestCase):
+
+    def setUp(self):
+        # _load_topic_mastery translates user_topic_mastery.topic_id (a real
+        # opaque FK in production) to an ML slug via a live topic-table
+        # lookup (database.postgres.db._topic_id_to_ml_slug) -- this file's
+        # module docstring guarantees "runs entirely without a real
+        # database", so that lookup is patched to identity here: these
+        # fixtures' topic_id values (e.g. "arrays") pass through unchanged,
+        # keeping every other assertion (confidence mapping, urgency,
+        # mastered/learning edges, etc.) exercising real logic without a
+        # live Postgres dependency.
+        patcher_get_conn = patch(
+            "pipeline.recommender.services.user_graph_service.get_connection",
+            return_value=None)
+        patcher_release_conn = patch(
+            "pipeline.recommender.services.user_graph_service.release_connection")
+        patcher_translate = patch(
+            "pipeline.recommender.services.user_graph_service._topic_id_to_ml_slug",
+            side_effect=lambda conn, topic_id: topic_id)
+        patcher_get_conn.start()
+        patcher_release_conn.start()
+        patcher_translate.start()
+        self.addCleanup(patcher_get_conn.stop)
+        self.addCleanup(patcher_release_conn.stop)
+        self.addCleanup(patcher_translate.stop)
 
     def _build(self, **kwargs):
         db = _make_db(**kwargs)

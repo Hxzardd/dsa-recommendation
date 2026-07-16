@@ -1,0 +1,28 @@
+$kind: http-request
+description: A clean one-shot solve at difficulty=0.4 (near-neutral). Solid but bounded gain.
+url: "{{base_url}}/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "userId": "postman_demo_user",
+      "problemId": "group-anagrams",
+      "verdict": "OK",
+      "hintsUsed": 0,
+      "testCasesPassed": 10,
+      "totalTestCases": 10,
+      "submissionCount": 1,
+      "normalisedScore": 1.0,
+      "problemDifficulty": 0.4,
+      "problemTopics": [
+        {
+          "topicId": "hash_map",
+          "currentMastery": 0.4,
+          "currentHlr": null
+        }
+      ]
+    }
+order: 4000

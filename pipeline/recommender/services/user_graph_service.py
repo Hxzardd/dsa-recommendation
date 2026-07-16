@@ -41,6 +41,9 @@ from pipeline.recommender.models.user_graph import (
     UserGraph, UserNode, ProblemEdge, ConceptEdge,
     ConceptConceptEdge, EdgeType,
 )
+from database.postgres.db import (
+    get_connection, release_connection, _topic_id_to_ml_slug,
+)
 
 log = logging.getLogger(__name__)
 
@@ -351,7 +354,24 @@ class UserGraphService:
             graph.add_problem_edge(edge)
 
     def _load_topic_mastery(self, graph: UserGraph, user_id: str) -> None:
-        """Load UserTopicMastery → ConceptEdge.  Merges BKT + HLR state."""
+        """
+        Load UserTopicMastery → ConceptEdge. Merges BKT + HLR state.
+
+        user_topic_mastery.topic_id is a FK to the backend's topic.id (an
+        opaque generated id) -- it is NOT an ML-pipeline slug. Every
+        downstream consumer of ConceptEdge.concept_slug (CoursePathPool's
+        target_concepts, mastered_concepts(), Qdrant topic_tags matching,
+        etc.) expects the ML slug ("array"), so each row's topic_id is
+        translated via database.postgres.topic_taxonomy before use here --
+        same translation get_user_mastery()/get_user_hlr() apply. Without
+        this, concept_slug was literally the opaque topic.id string, which
+        never matches any real Qdrant topic_tags value: every pool that
+        targets "concepts the user knows/is learning" silently found zero
+        candidates for any user with real seeded mastery, even though
+        graph.concept_edges looked non-empty. Rows for a topic_id with no
+        ML-slug counterpart (topic_taxonomy.UNMAPPED_TOPIC_SLUGS) are
+        skipped, not guessed.
+        """
         try:
             rows = self._db.execute(
                 """
@@ -370,66 +390,81 @@ class UserGraphService:
         bkt_user = self._bkt.get(user_id, {})
         hlr_user = self._hlr.get(user_id, {})
 
-        for row in rows:
-            (topic_id, mastery_score, confidence, attempt_count,
-             problems_solved, last_attempted, sm2_ef, sm2_interval,
-             next_review_date) = row
+        topic_conn = get_connection()
+        try:
+            for row in rows:
+                (raw_topic_id, mastery_score, confidence, attempt_count,
+                 problems_solved, last_attempted, sm2_ef, sm2_interval,
+                 next_review_date) = row
 
-            # BKT P(L) from Shraddha's online store takes precedence.
-            # user_topic_mastery.mastery_score is ALREADY 0-1 in the real
-            # schema (confirmed against a live instance of this backend
-            # project) -- the /100.0 here previously assumed a 0-100 scale
-            # that doesn't exist, silently shrinking every loaded mastery
-            # value to ~1/100th of its real value.
-            bkt_mastery = bkt_user.get(topic_id)
-            final_mastery = float(bkt_mastery) if bkt_mastery is not None \
-                            else float(mastery_score or 0)
+                topic_id = _topic_id_to_ml_slug(topic_conn, str(raw_topic_id))
+                if topic_id is None:
+                    continue
+                self._add_topic_mastery_edge(
+                    graph, topic_id, mastery_score, confidence, last_attempted,
+                    sm2_ef, sm2_interval, next_review_date, bkt_user, hlr_user,
+                )
+        finally:
+            release_connection(topic_conn)
 
-            hlr_topic = hlr_user.get(topic_id, {})
-            hlr_urgency = 0.0
-            hlr_half_life = 1.0
+    def _add_topic_mastery_edge(self, graph, topic_id, mastery_score, confidence,
+                                last_attempted, sm2_ef, sm2_interval,
+                                next_review_date, bkt_user, hlr_user) -> None:
+        # BKT P(L) from Shraddha's online store takes precedence.
+        # user_topic_mastery.mastery_score is ALREADY 0-1 in the real
+        # schema (confirmed against a live instance of this backend
+        # project) -- the /100.0 here previously assumed a 0-100 scale
+        # that doesn't exist, silently shrinking every loaded mastery
+        # value to ~1/100th of its real value.
+        bkt_mastery = bkt_user.get(topic_id)
+        final_mastery = float(bkt_mastery) if bkt_mastery is not None \
+                        else float(mastery_score or 0)
 
-            if hlr_topic:
-                from pipeline.recommender.hlr import calculate_urgency
-                import time as _t
-                hlr_urgency   = calculate_urgency(hlr_topic, _t.time())
-                hlr_half_life = float(hlr_topic.get("half_life", 1.0))
+        hlr_topic = hlr_user.get(topic_id, {})
+        hlr_urgency = 0.0
+        hlr_half_life = 1.0
 
-            # confidence = 1 - CV(last 5 performance scores).
-            # HLR stores performance on last attempt; schema stores confidence
-            # as low/medium/high string — map to float for the edge.
-            conf_raw = str(confidence or "medium")
-            conf_map = {"low": 0.33, "medium": 0.66, "high": 1.0}
-            final_confidence = conf_map.get(conf_raw.lower(), 0.66)
+        if hlr_topic:
+            from pipeline.recommender.hlr import calculate_urgency
+            import time as _t
+            hlr_urgency   = calculate_urgency(hlr_topic, _t.time())
+            hlr_half_life = float(hlr_topic.get("half_life", 1.0))
 
-            ts_last = None
-            if last_attempted:
-                ts_last = last_attempted.timestamp() \
-                    if hasattr(last_attempted, "timestamp") \
-                    else float(last_attempted)
+        # confidence = 1 - CV(last 5 performance scores).
+        # HLR stores performance on last attempt; schema stores confidence
+        # as low/medium/high string — map to float for the edge.
+        conf_raw = str(confidence or "medium")
+        conf_map = {"low": 0.33, "medium": 0.66, "high": 1.0}
+        final_confidence = conf_map.get(conf_raw.lower(), 0.66)
 
-            nrd_str = str(next_review_date) if next_review_date else None
+        ts_last = None
+        if last_attempted:
+            ts_last = last_attempted.timestamp() \
+                if hasattr(last_attempted, "timestamp") \
+                else float(last_attempted)
 
-            if final_mastery >= 0.7:
-                etype = EdgeType.MASTERED
-            elif final_mastery > 0.0:
-                etype = EdgeType.LEARNING
-            else:
-                continue
+        nrd_str = str(next_review_date) if next_review_date else None
 
-            edge = ConceptEdge(
-                concept_slug=str(topic_id),
-                edge_type=etype,
-                mastery_score=final_mastery,
-                confidence=final_confidence,
-                half_life=hlr_half_life,
-                urgency=float(hlr_urgency),
-                sm2_ef=float(sm2_ef or 2.5),
-                sm2_interval=int(sm2_interval or 1),
-                next_review_date=nrd_str,
-                last_attempted=ts_last,
-            )
-            graph.add_concept_edge(edge)
+        if final_mastery >= 0.7:
+            etype = EdgeType.MASTERED
+        elif final_mastery > 0.0:
+            etype = EdgeType.LEARNING
+        else:
+            return
+
+        edge = ConceptEdge(
+            concept_slug=str(topic_id),
+            edge_type=etype,
+            mastery_score=final_mastery,
+            confidence=final_confidence,
+            half_life=hlr_half_life,
+            urgency=float(hlr_urgency),
+            sm2_ef=float(sm2_ef or 2.5),
+            sm2_interval=int(sm2_interval or 1),
+            next_review_date=nrd_str,
+            last_attempted=ts_last,
+        )
+        graph.add_concept_edge(edge)
 
     def _load_concept_gaps(self, graph: UserGraph, user_id: str) -> None:
         """Load ConceptGapProfile → augments ConceptEdge with severity."""

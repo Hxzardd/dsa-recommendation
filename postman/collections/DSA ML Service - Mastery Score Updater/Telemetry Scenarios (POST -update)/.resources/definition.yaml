@@ -1,0 +1,4 @@
+$kind: collection
+name: Telemetry Scenarios (POST /update)
+description: "Seven ready-to-send POST /update bodies, one per file in postman/telemetry_samples/, demonstrating each mastery-update mechanism: bounded delta (MAX_MASTERY_DELTA), difficulty-scaled cap, mastery-proximity dampening, trivial-gap dampening, confidence penalty (thrashing), and the wrong-answer cap. See POSTMAN_GUIDE.md for the full expected-value table."
+order: 1000

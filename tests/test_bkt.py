@@ -191,15 +191,18 @@ class TestMasteryProximityDampening(unittest.TestCase):
         self.assertAlmostEqual((0.9 - without_difficulty_low), (0.5 - without_difficulty_mid), places=2)
 
     def test_cold_start_p_l_zero_is_undampened(self):
-        # At current_p_l=0.0, proximity_scale=1.0 -- matches prior
-        # (pre-dampening) behavior exactly for a topic with zero history.
-        # Compares against p_l=0.001 (also ~undampened) rather than
-        # hardcoding MAX_MASTERY_DELTA directly, since the achieved delta
-        # is also a function of BKT_PARAMS (P_T/P_G/P_S), which are tuning
-        # parameters that can legitimately change independent of the
-        # dampening logic under test here.
+        # At current_p_l=0 exactly, proximity_scale=1.0 -- matches prior
+        # (pre-dampening) behavior exactly for a topic with zero history:
+        # the delta should hit the full effective cap, whatever it computes
+        # to for the current BKT_PARAMS (P_T/P_G/P_S) -- not a hardcoded
+        # value, since those are tuning parameters that can legitimately
+        # change independent of the dampening logic under test here.
         new_p_l_no_dampening_case = update_bkt(current_p_l=0.001, observed=0.95, difficulty=0.5)
         new_p_l = update_bkt(current_p_l=0.0, observed=0.95, difficulty=0.5)
+        # p_l=0.0 and p_l=0.001 both round to ~1.0x proximity_scale (the
+        # dampening curve is continuous, not a step function) -- so both
+        # should land on the same effective cap, confirming p_l=0 isn't
+        # itself being dampened.
         self.assertAlmostEqual(new_p_l, new_p_l_no_dampening_case, places=2)
 
 

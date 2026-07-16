@@ -1,0 +1,16 @@
+$kind: collection
+description: |-
+  Standalone ML recommendation + mastery-update service, pinned to commit 813b4e9 ('p1 and p2'). At this commit POST /update, GET /mastery, GET /urgency, and GET /recommend have NO auth -- call them directly. Only POST /seed_hlr/{user_id} and POST /seed_bkt/{user_id} check anything, and it's a documented PLACEHOLDER (routes/seeding.py's require_same_user): an X-User-Id header that must match the path's user_id, with no real signature/session verification behind it.
+
+  Run seed_test_session.py against your local DATABASE_URL to create a test user row first (needed for GET /mastery, GET /urgency, and the seeding routes to have anything to read).
+
+  See RUNNING.md for full setup and POSTMAN_GUIDE.md for a request-by-request walkthrough with expected results, including how the 'Telemetry Scenarios' folder demonstrates the bounded, diminishing-returns mastery update.
+variables:
+  base_url: http://localhost:8000
+  user_id: postman_demo_user
+auth:
+  - id: ff38c7f7-fada-45f2-9eb4-a5b664648bb9
+    type: bearer
+    name: bearer auth
+    credentials:
+      token: "{{auth_token}}"

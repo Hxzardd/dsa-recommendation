@@ -1,0 +1,33 @@
+$kind: http-request
+description: Moderate mastery (0.4) solving a HARD problem (difficulty=0.95) with 1 hint and 2 attempts. The largest gain in this sample set -- appropriately challenging practice is rewarded more than trivial practice, even before accounting for the confidence penalty from the extra attempt/hint.
+url: "{{base_url}}/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "userId": "postman_demo_user",
+      "problemId": "median-of-two-sorted-arrays",
+      "verdict": "OK",
+      "hintsUsed": 1,
+      "testCasesPassed": 10,
+      "totalTestCases": 10,
+      "submissionCount": 2,
+      "normalisedScore": 0.85,
+      "problemDifficulty": 0.95,
+      "problemTopics": [
+        {
+          "topicId": "binary_search_answer",
+          "currentMastery": 0.4,
+          "currentHlr": null
+        },
+        {
+          "topicId": "array",
+          "currentMastery": null,
+          "currentHlr": null
+        }
+      ]
+    }
+order: 7000

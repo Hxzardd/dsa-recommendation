@@ -1,0 +1,28 @@
+$kind: http-request
+description: verdict != OK caps the telemetry signal at 0.35 regardless of partial credit. Mastery actually DECREASES here, since a wrong answer is real negative evidence, not neutral.
+url: "{{base_url}}/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "userId": "postman_demo_user",
+      "problemId": "3sum",
+      "verdict": "WRONG_ANSWER",
+      "hintsUsed": 1,
+      "testCasesPassed": 6,
+      "totalTestCases": 10,
+      "submissionCount": 2,
+      "normalisedScore": 0.5,
+      "problemDifficulty": 0.4,
+      "problemTopics": [
+        {
+          "topicId": "two_pointers",
+          "currentMastery": 0.5,
+          "currentHlr": null
+        }
+      ]
+    }
+order: 3000

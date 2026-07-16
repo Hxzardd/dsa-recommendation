@@ -5,7 +5,7 @@ from pipeline.recommender.bkt import (
     process_submission, calculate_observed, update_bkt,
     MASTERY_THRESHOLD, DEFAULT_P_L,
 )
-from database.postgres.db import get_connection, release_connection, save_user_hlr
+from database.postgres.db import get_connection, release_connection, save_user_hlr, save_user_mastery
 from psycopg2.extras import RealDictCursor
 
 def user_exists(user_id: str) -> bool:
@@ -207,22 +207,6 @@ def get_lc_submissions(lc_handle: str):
         raise ProviderError(f"LeetCode GraphQL error: {data['errors']}")
 
     return data.get("data", {}).get("recentSubmissionList", [])
-
-
-def save_user_mastery(user_id: str, mastery: dict):
-    """Write seeded BKT mastery to user_topic_mastery table."""
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            for topic_id, mastery_score in mastery.items():
-                cur.execute("""
-                    INSERT INTO user_topic_mastery (user_id, topic_id, mastery_score, updated_at)
-                    VALUES (%s, %s, %s, NOW())
-                    ON CONFLICT (user_id, topic_id) DO NOTHING
-                """, (user_id, topic_id, mastery_score))
-        conn.commit()
-    finally:
-        release_connection(conn)
 
 
 def _apply_bkt_update(current_mastery: dict, topics: list, verdict: str,

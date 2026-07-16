@@ -52,7 +52,7 @@ from pipeline.recommender.services.state_update_service import StateUpdateServic
 from pipeline.recommender import bkt as bkt_module
 from pipeline.recommender import hlr as hlr_module
 
-_TOPICS = ["arrays", "graphs", "trees", "dp", "strings", "two_pointers"]
+_TOPICS = ["array", "graph", "tree", "dp", "string", "two_pointers"]
 
 _ORIGINAL_BKT_MAPPING = dict(bkt_module.problem_to_topics)
 _ORIGINAL_HLR_MAPPING = dict(hlr_module.problem_to_topics)
@@ -66,7 +66,7 @@ def _patch_problem_topic_mapping():
     empty, so process_submission()/process_hlr() correctly find zero topics
     for any made-up problem_id and silently do nothing -- not a bug in
     those modules, just missing fixture data. Patch the mapping directly so
-    "arrays_0".."arrays_11" etc actually resolve to their topic for this
+    "array_0".."array_11" etc actually resolve to their topic for this
     demonstration/test, matching what a real ingested catalog would provide.
 
     IMPORTANT: bkt_module/hlr_module are singletons shared across every test
@@ -176,7 +176,7 @@ class FakeRedis:
 
 
 def _catalog():
-    topics = ["arrays", "graphs", "trees", "dp", "strings", "two_pointers"]
+    topics = ["array", "graph", "tree", "dp", "string", "two_pointers"]
     out = []
     for t in topics:
         for j in range(12):
@@ -248,12 +248,12 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
         before = self._recommend("progressing_user")
         before_ids = _rec_ids(before)
 
-        # simulate solving several "arrays" problems well -> arrays mastery
+        # simulate solving several "array" problems well -> array mastery
         # should rise, unlocking pool F (stretch) / pool E (review) / pool
-        # D (weakness on OTHER topics now that arrays is comparatively strong)
+        # D (weakness on OTHER topics now that array is comparatively strong)
         for i in range(6):
             self.state_service.process_submission(
-                "progressing_user", _submission(f"arrays_{i}", verdict="OK", score=0.95))
+                "progressing_user", _submission(f"array_{i}", verdict="OK", score=0.95))
 
         after = self._recommend("progressing_user")
         after_ids = _rec_ids(after)
@@ -263,7 +263,7 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
                            "submissions -- state update isn't affecting ranking.")
 
     def test_solved_problems_never_recommended_again(self):
-        solved_ids = [f"arrays_{i}" for i in range(6)]
+        solved_ids = [f"array_{i}" for i in range(6)]
         for pid in solved_ids:
             self.state_service.process_submission(
                 "progressing_user", _submission(pid, verdict="OK", score=0.95))
@@ -291,7 +291,7 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
 
         for i in range(3):
             self.state_service.process_submission(
-                "progressing_user", _submission(f"arrays_{i}", verdict="OK", score=0.9))
+                "progressing_user", _submission(f"array_{i}", verdict="OK", score=0.9))
 
         graph_after = self._get_graph_or_new("progressing_user")
         state_after = UserStateBuilder(qdrant_client=self.qdrant).build(graph_after)
@@ -311,7 +311,7 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
 
         for i in range(10):
             self.state_service.process_submission(
-                "progressing_user", _submission(f"arrays_{i}", verdict="OK", score=0.95))
+                "progressing_user", _submission(f"array_{i}", verdict="OK", score=0.95))
 
         graph_after = self._get_graph_or_new("progressing_user")
         plan_after = AdaptiveDifficultyController().build_plan(graph_after)
@@ -354,15 +354,15 @@ class TestDifferentUsersDiverge(unittest.TestCase):
         self.assertEqual(_rec_ids(user_a), _rec_ids(user_b))
 
     def test_users_diverge_after_different_progress(self):
-        # User A solves only "arrays" problems
+        # User A solves only "array" problems
         for i in range(6):
             self.state_service.process_submission(
-                "user_a", _submission(f"arrays_{i}", verdict="OK", score=0.95))
+                "user_a", _submission(f"array_{i}", verdict="OK", score=0.95))
 
-        # User B solves only "graphs" problems
+        # User B solves only "graph" problems
         for i in range(6):
             self.state_service.process_submission(
-                "user_b", _submission(f"graphs_{i}", verdict="OK", score=0.95))
+                "user_b", _submission(f"graph_{i}", verdict="OK", score=0.95))
 
         result_a = self._recommend("user_a")
         result_b = self._recommend("user_b")
@@ -374,10 +374,10 @@ class TestDifferentUsersDiverge(unittest.TestCase):
     def test_diverged_users_reflect_their_own_topic_focus(self):
         for i in range(6):
             self.state_service.process_submission(
-                "user_a", _submission(f"arrays_{i}", verdict="OK", score=0.95))
+                "user_a", _submission(f"array_{i}", verdict="OK", score=0.95))
         for i in range(6):
             self.state_service.process_submission(
-                "user_b", _submission(f"graphs_{i}", verdict="OK", score=0.95))
+                "user_b", _submission(f"graph_{i}", verdict="OK", score=0.95))
 
         result_a = self._recommend("user_a")
         result_b = self._recommend("user_b")
@@ -386,8 +386,8 @@ class TestDifferentUsersDiverge(unittest.TestCase):
         # by test_users_diverge_after_different_progress above). Topic sets
         # can legitimately share entries even between diverged users, since
         # both may still partly draw from shared fallback/novelty pools --
-        # so this checks that user A's list is skewed toward graphs (their
-        # weak/untouched topic) at least as much as toward arrays (their
+        # so this checks that user A's list is skewed toward graph (their
+        # weak/untouched topic) at least as much as toward array (their
         # mastered topic), and vice versa for user B, rather than requiring
         # the topic sets to be fully disjoint.
         topics_a = _rec_topics(result_a)
@@ -418,7 +418,7 @@ class TestManySimulatedUsersAreNotAllIdentical(unittest.TestCase):
             state_service = StateUpdateService(
                 graph_service, qdrant=qdrant, bkt_store=bkt_store, hlr_store=hlr_store)
 
-            topic_focus = ["arrays", "graphs", "trees", "dp", "strings"]
+            topic_focus = ["array", "graph", "tree", "dp", "string"]
             distinct_slates = set()
 
             for idx, topic in enumerate(topic_focus):

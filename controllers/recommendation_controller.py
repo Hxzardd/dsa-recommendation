@@ -13,7 +13,7 @@ import psycopg2
 from fastapi import HTTPException
 
 import db_env
-from database.postgres.db import get_connection, get_user_mastery, get_user_hlr
+from database.postgres.db import get_connection, release_connection, get_user_mastery, get_user_hlr
 from pipeline.recommender.services.neo4j_graph_store import Neo4jGraphStore
 from pipeline.recommender.services.recommend import get_recommendations
 
@@ -100,7 +100,8 @@ def _get_db_wrapper():
     regardless. None if DATABASE_URL isn't set or the connection fails --
     UserGraphService already degrades gracefully to a cold-start graph
     either way, matching the get_user_mastery/get_user_hlr fallback above.
-    Caller must call .close() on the returned wrapper's .conn when done.
+    Caller must call release_connection() (NOT .close()) on the returned
+    wrapper's .conn when done -- get_connection() now draws from a pool.
     """
     try:
         return DBWrapper(get_connection())
@@ -174,5 +175,11 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
             detail="Recommendation engine encountered an error",
         )
     finally:
+        # get_connection() now draws from a ThreadedConnectionPool
+        # (maxconn=10, see database/postgres/db.py) -- .close() closes the
+        # TCP connection but does NOT free the pool's tracked slot, so this
+        # would leak one pool slot on EVERY /recommend call and exhaust the
+        # pool after 10 requests. release_connection() (putconn()) is the
+        # only way to actually return the slot.
         if db_wrapper is not None:
-            db_wrapper.conn.close()
+            release_connection(db_wrapper.conn)

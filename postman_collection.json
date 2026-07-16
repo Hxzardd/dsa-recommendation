@@ -366,5 +366,15 @@
         }
       ]
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  }
 }

@@ -1,0 +1,7 @@
+$kind: http-request
+description: Full ML pipeline recommendation. Requires Qdrant + Neo4j reachable. No auth needed.
+url: "{{base_url}}/recommend/{{user_id}}?limit=10"
+method: GET
+queryParams:
+  limit: "10"
+order: 6000
