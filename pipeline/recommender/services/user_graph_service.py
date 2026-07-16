@@ -252,14 +252,21 @@ class UserGraphService:
         return graph
 
     def _fetch_user(self, user_id: str) -> Optional[UserNode]:
+        # Table/column names match the REAL deployed schema, not the
+        # PascalCase Prisma-style names this query previously assumed
+        # (which don't exist in the actual database -- confirmed directly
+        # against a live instance of this backend project: "user" is
+        # lowercase and needs quoting since it's a reserved word; its
+        # primary key column is `id`, not `user_id`; `name`, not
+        # `username`; `onboarding_completed`, not `onboarding_complete`).
         try:
             row = self._db.execute(
                 """
-                SELECT u.user_id, u.username, u.onboarding_complete,
+                SELECT u.id, u.name, u.onboarding_completed,
                        x.total_xp, x.current_level
-                FROM   "User"  u
-                LEFT JOIN "UserXP" x ON x.user_id = u.user_id
-                WHERE  u.user_id = :uid
+                FROM   "user"  u
+                LEFT JOIN user_xp x ON x.user_id = u.id
+                WHERE  u.id = :uid
                 """,
                 {"uid": user_id},
             ).fetchone()
@@ -283,7 +290,7 @@ class UserGraphService:
                 """
                 SELECT problem_id, verdict, normalised_score,
                        hints_used, submission_count, submitted_at
-                FROM   "Submission"
+                FROM   submission
                 WHERE  user_id = :uid AND status = 'COMPLETED'
                 ORDER  BY submitted_at DESC
                 LIMIT  500
@@ -317,7 +324,7 @@ class UserGraphService:
             rows = self._db.execute(
                 """
                 SELECT problem_id, recommended_at, was_skipped, skip_count
-                FROM   "RecommendationLog"
+                FROM   recommendation_log
                 WHERE  user_id = :uid
                 ORDER  BY recommended_at DESC
                 LIMIT  300
@@ -351,7 +358,7 @@ class UserGraphService:
                 SELECT topic_id, mastery_score, confidence,
                        attempt_count, problems_solved, last_attempted,
                        sm2_ef, sm2_interval, next_review_date
-                FROM   "UserTopicMastery"
+                FROM   user_topic_mastery
                 WHERE  user_id = :uid
                 """,
                 {"uid": user_id},
@@ -368,10 +375,15 @@ class UserGraphService:
              problems_solved, last_attempted, sm2_ef, sm2_interval,
              next_review_date) = row
 
-            # BKT P(L) from Shraddha's online store takes precedence
+            # BKT P(L) from Shraddha's online store takes precedence.
+            # user_topic_mastery.mastery_score is ALREADY 0-1 in the real
+            # schema (confirmed against a live instance of this backend
+            # project) -- the /100.0 here previously assumed a 0-100 scale
+            # that doesn't exist, silently shrinking every loaded mastery
+            # value to ~1/100th of its real value.
             bkt_mastery = bkt_user.get(topic_id)
             final_mastery = float(bkt_mastery) if bkt_mastery is not None \
-                            else float(mastery_score or 0) / 100.0
+                            else float(mastery_score or 0)
 
             hlr_topic = hlr_user.get(topic_id, {})
             hlr_urgency = 0.0
@@ -425,7 +437,7 @@ class UserGraphService:
             rows = self._db.execute(
                 """
                 SELECT gap_name, severity
-                FROM   "ConceptGapProfile"
+                FROM   concept_gap_profile
                 WHERE  user_id = :uid AND severity > 0.3
                 """,
                 {"uid": user_id},

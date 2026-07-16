@@ -1,0 +1,370 @@
+{
+  "info": {
+    "name": "DSA ML Service - Mastery Score Updater",
+    "description": "Standalone ML recommendation + mastery-update service, pinned to commit 813b4e9 ('p1 and p2'). At this commit POST /update, GET /mastery, GET /urgency, and GET /recommend have NO auth -- call them directly. Only POST /seed_hlr/{user_id} and POST /seed_bkt/{user_id} check anything, and it's a documented PLACEHOLDER (routes/seeding.py's require_same_user): an X-User-Id header that must match the path's user_id, with no real signature/session verification behind it.\n\nRun seed_test_session.py against your local DATABASE_URL to create a test user row first (needed for GET /mastery, GET /urgency, and the seeding routes to have anything to read).\n\nSee RUNNING.md for full setup and POSTMAN_GUIDE.md for a request-by-request walkthrough with expected results, including how the 'Telemetry Scenarios' folder demonstrates the bounded, diminishing-returns mastery update.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "postman_demo_user",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Root (health check)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": []
+        }
+      }
+    },
+    {
+      "name": "Telemetry Scenarios (POST /update)",
+      "description": "Seven ready-to-send POST /update bodies, one per file in postman/telemetry_samples/, demonstrating each mastery-update mechanism: bounded delta (MAX_MASTERY_DELTA), difficulty-scaled cap, mastery-proximity dampening, trivial-gap dampening, confidence penalty (thrashing), and the wrong-answer cap. See POSTMAN_GUIDE.md for the full expected-value table.",
+      "item": [
+        {
+          "name": "Scenario 1 - Cold start, easy solve",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "update"
+              ]
+            },
+            "description": "First-ever submission for these topics (currentMastery=null -> DEFAULT_P_L branch=0.15). Topics actually updated come from the static problem_to_topics mapping keyed by problemId (data/problem_topic_edges_normalized.json), NOT from problemTopics in the body, at this commit -- so 'two-sum' may touch more/different topics than listed here. Expect mastery to move from 0.15 to ~0.23 (+0.08), the capped MAX_MASTERY_DELTA scaled down for an easy (difficulty=0.15) problem -- NOT the ~0.54 jump the uncapped Bayesian formula would have produced.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"postman_demo_user\",\n  \"problemId\": \"two-sum\",\n  \"verdict\": \"OK\",\n  \"hintsUsed\": 0,\n  \"testCasesPassed\": 10,\n  \"totalTestCases\": 10,\n  \"submissionCount\": 1,\n  \"normalisedScore\": 0.95,\n  \"problemDifficulty\": 0.15,\n  \"problemTopics\": [\n    {\n      \"topicId\": \"array\",\n      \"currentMastery\": null,\n      \"currentHlr\": null\n    },\n    {\n      \"topicId\": \"hash_map\",\n      \"currentMastery\": null,\n      \"currentHlr\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Scenario 2 - Struggling, many attempts (confidence penalty)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "update"
+              ]
+            },
+            "description": "7 submissions and 4 hints on a moderate problem. The confidence penalty in telemetry.py pulls the observed signal down (~0.39), so mastery only creeps upward despite an eventual OK verdict.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"postman_demo_user\",\n  \"problemId\": \"longest-substring-without-repeating-characters\",\n  \"verdict\": \"OK\",\n  \"hintsUsed\": 4,\n  \"testCasesPassed\": 10,\n  \"totalTestCases\": 10,\n  \"submissionCount\": 7,\n  \"normalisedScore\": 0.6,\n  \"problemDifficulty\": 0.45,\n  \"problemTopics\": [\n    {\n      \"topicId\": \"two_pointers\",\n      \"currentMastery\": 0.3,\n      \"currentHlr\": null\n    },\n    {\n      \"topicId\": \"hash_map\",\n      \"currentMastery\": null,\n      \"currentHlr\": null\n    },\n    {\n      \"topicId\": \"string\",\n      \"currentMastery\": null,\n      \"currentHlr\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Scenario 3 - Wrong answer (verdict cap)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "update"
+              ]
+            },
+            "description": "verdict != OK caps the telemetry signal at 0.35 regardless of partial credit. Mastery actually DECREASES here, since a wrong answer is real negative evidence, not neutral.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"postman_demo_user\",\n  \"problemId\": \"3sum\",\n  \"verdict\": \"WRONG_ANSWER\",\n  \"hintsUsed\": 1,\n  \"testCasesPassed\": 6,\n  \"totalTestCases\": 10,\n  \"submissionCount\": 2,\n  \"normalisedScore\": 0.5,\n  \"problemDifficulty\": 0.4,\n  \"problemTopics\": [\n    {\n      \"topicId\": \"two_pointers\",\n      \"currentMastery\": 0.5,\n      \"currentHlr\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Scenario 4 - Moderate difficulty, clean solve",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "update"
+              ]
+            },
+            "description": "A clean one-shot solve at difficulty=0.4 (near-neutral). Solid but bounded gain.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"postman_demo_user\",\n  \"problemId\": \"group-anagrams\",\n  \"verdict\": \"OK\",\n  \"hintsUsed\": 0,\n  \"testCasesPassed\": 10,\n  \"totalTestCases\": 10,\n  \"submissionCount\": 1,\n  \"normalisedScore\": 1.0,\n  \"problemDifficulty\": 0.4,\n  \"problemTopics\": [\n    {\n      \"topicId\": \"hash_map\",\n      \"currentMastery\": 0.4,\n      \"currentHlr\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Scenario 5a - Warmup before trivial (near-mastery)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "update"
+              ]
+            },
+            "description": "Topic is already well-mastered (0.75). Even a clean solve only nudges it up slightly -- the mastery-proximity dampening in bkt.py's update_bkt shrinking returns as mastery approaches 1.0.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"postman_demo_user\",\n  \"problemId\": \"valid-anagram\",\n  \"verdict\": \"OK\",\n  \"hintsUsed\": 0,\n  \"testCasesPassed\": 10,\n  \"totalTestCases\": 10,\n  \"submissionCount\": 1,\n  \"normalisedScore\": 0.9,\n  \"problemDifficulty\": 0.3,\n  \"problemTopics\": [\n    {\n      \"topicId\": \"hash_map\",\n      \"currentMastery\": 0.75,\n      \"currentHlr\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Scenario 5b - Trivial relative to mastery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "update"
+              ]
+            },
+            "description": "Topic mastery=0.85, problem difficulty=0.05 -- solving something far below your current level barely counts as evidence of growth. Both mastery-proximity AND trivial-gap dampening stack here, so the gain is almost flat.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"postman_demo_user\",\n  \"problemId\": \"two-sum\",\n  \"verdict\": \"OK\",\n  \"hintsUsed\": 0,\n  \"testCasesPassed\": 10,\n  \"totalTestCases\": 10,\n  \"submissionCount\": 1,\n  \"normalisedScore\": 1.0,\n  \"problemDifficulty\": 0.05,\n  \"problemTopics\": [\n    {\n      \"topicId\": \"hash_map\",\n      \"currentMastery\": 0.85,\n      \"currentHlr\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Scenario 6 - Hard stretch solve",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "update"
+              ]
+            },
+            "description": "Moderate mastery (0.4) solving a HARD problem (difficulty=0.95) with 1 hint and 2 attempts. The largest gain in this sample set -- appropriately challenging practice is rewarded more than trivial practice, even before accounting for the confidence penalty from the extra attempt/hint.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"postman_demo_user\",\n  \"problemId\": \"median-of-two-sorted-arrays\",\n  \"verdict\": \"OK\",\n  \"hintsUsed\": 1,\n  \"testCasesPassed\": 10,\n  \"totalTestCases\": 10,\n  \"submissionCount\": 2,\n  \"normalisedScore\": 0.85,\n  \"problemDifficulty\": 0.95,\n  \"problemTopics\": [\n    {\n      \"topicId\": \"binary_search_answer\",\n      \"currentMastery\": 0.4,\n      \"currentHlr\": null\n    },\n    {\n      \"topicId\": \"array\",\n      \"currentMastery\": null,\n      \"currentHlr\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get mastery + proficiency",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/mastery/{{user_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "mastery",
+            "{{user_id}}"
+          ]
+        },
+        "description": "Raw BKT mastery per topic, mastered_topics list, and proficiency (mastery decayed by HLR retention -- 'how good are they RIGHT NOW', not just historically). No auth needed."
+      }
+    },
+    {
+      "name": "Get urgency (forgetting curve)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/urgency/{{user_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "urgency",
+            "{{user_id}}"
+          ]
+        },
+        "description": "HLR-derived urgency per topic -- higher = more likely forgotten, due for review. No auth needed."
+      }
+    },
+    {
+      "name": "Get recommendations",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/recommend/{{user_id}}?limit=10",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "recommend",
+            "{{user_id}}"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "Full ML pipeline recommendation. Requires Qdrant + Neo4j reachable. No auth needed."
+      }
+    },
+    {
+      "name": "Seeding (CF/LC history import)",
+      "description": "These two routes DO check a header -- X-User-Id must equal {{user_id}} or you get a 403 (see routes/seeding.py's require_same_user docstring for why this is a placeholder, not real auth).",
+      "item": [
+        {
+          "name": "Seed HLR from Codeforces",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/seed_hlr/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "seed_hlr",
+                "{{user_id}}"
+              ]
+            },
+            "description": "Requires the user row to have linked_codeforces set (use seed_test_session.py --cf)."
+          }
+        },
+        {
+          "name": "Seed BKT from LeetCode",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/seed_bkt/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "seed_bkt",
+                "{{user_id}}"
+              ]
+            },
+            "description": "Requires the user row to have linked_leetcode set (use seed_test_session.py --lc)."
+          }
+        }
+      ]
+    }
+  ]
+}

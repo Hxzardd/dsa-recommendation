@@ -38,13 +38,11 @@ Run:
 from __future__ import annotations
 
 import json
-import math
 import sys
 import time
 import types
 import unittest
-from dataclasses import asdict
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 
 import numpy as np
 
@@ -99,11 +97,10 @@ from pipeline.recommender.models.user_graph import (
     ConceptConceptEdge, EdgeType,
 )
 from pipeline.recommender.models.user_state import (
-    UserStateBuilder, UserStateVector,
-    QS_DIM, RGCN_DIM, FULL_DIM, LAMBDA_DAYS,
+    UserStateBuilder, QS_DIM, RGCN_DIM, FULL_DIM,
 )
 from pipeline.recommender.services.user_graph_service import (
-    UserGraphService, load_offline_concept_graph, _PREREQ_CACHE,
+    UserGraphService, load_offline_concept_graph,
 )
 
 
@@ -178,7 +175,7 @@ def _make_db(
 
 def _mastery_row(
     topic_id,
-    mastery_score=50.0,
+    mastery_score=0.5,   # 0-1 in the real schema, not 0-100 -- see user_graph_service.py fix
     confidence="medium",
     attempt_count=5,
     problems_solved=3,
@@ -335,14 +332,14 @@ class TestGraphAssembly(unittest.TestCase):
 
     def test_mastered_edge_high_mastery(self):
         g = self._build(mastery_rows=[
-            _mastery_row("arrays", mastery_score=80.0),
+            _mastery_row("arrays", mastery_score=0.8),
         ])
         self.assertIn("arrays", g.concept_edges)
         self.assertEqual(g.concept_edges["arrays"].edge_type, EdgeType.MASTERED)
 
     def test_learning_edge_mid_mastery(self):
         g = self._build(mastery_rows=[
-            _mastery_row("graphs", mastery_score=50.0),
+            _mastery_row("graphs", mastery_score=0.5),
         ])
         self.assertEqual(g.concept_edges["graphs"].edge_type, EdgeType.LEARNING)
 
@@ -354,26 +351,26 @@ class TestGraphAssembly(unittest.TestCase):
 
     def test_confidence_mapped_low(self):
         g = self._build(mastery_rows=[
-            _mastery_row("arrays", mastery_score=75.0, confidence="low"),
+            _mastery_row("arrays", mastery_score=0.75, confidence="low"),
         ])
         self.assertAlmostEqual(g.concept_edges["arrays"].confidence, 0.33)
 
     def test_confidence_mapped_medium(self):
         g = self._build(mastery_rows=[
-            _mastery_row("arrays", mastery_score=75.0, confidence="medium"),
+            _mastery_row("arrays", mastery_score=0.75, confidence="medium"),
         ])
         self.assertAlmostEqual(g.concept_edges["arrays"].confidence, 0.66)
 
     def test_confidence_mapped_high(self):
         g = self._build(mastery_rows=[
-            _mastery_row("arrays", mastery_score=75.0, confidence="high"),
+            _mastery_row("arrays", mastery_score=0.75, confidence="high"),
         ])
         self.assertAlmostEqual(g.concept_edges["arrays"].confidence, 1.0)
 
     def test_bkt_store_overrides_db_mastery(self):
         bkt = {USER_ID: {"arrays": 0.9}}
         db  = _make_db(mastery_rows=[
-            _mastery_row("arrays", mastery_score=50.0),
+            _mastery_row("arrays", mastery_score=0.5),
         ])
         svc = UserGraphService(db=db, redis=None, bkt=bkt, hlr={})
         g   = svc.get(USER_ID)
@@ -383,7 +380,7 @@ class TestGraphAssembly(unittest.TestCase):
         hlr_state = {"half_life": 7.0, "last_review": "2025-01-01T00:00:00+00:00"}
         hlr = {USER_ID: {"arrays": hlr_state}}
         db  = _make_db(mastery_rows=[
-            _mastery_row("arrays", mastery_score=75.0),
+            _mastery_row("arrays", mastery_score=0.75),
         ])
         svc = UserGraphService(db=db, redis=None, bkt={}, hlr=hlr)
         g   = svc.get(USER_ID)
@@ -397,7 +394,7 @@ class TestGraphAssembly(unittest.TestCase):
 
     def test_gap_severity_merged_onto_existing_edge(self):
         g = self._build(
-            mastery_rows=[_mastery_row("arrays", mastery_score=75.0)],
+            mastery_rows=[_mastery_row("arrays", mastery_score=0.75)],
             gap_rows=[_gap_row("arrays", severity=0.8)],
         )
         self.assertAlmostEqual(g.concept_edges["arrays"].severity, 0.8)
@@ -413,7 +410,7 @@ class TestGraphAssembly(unittest.TestCase):
 
     def test_weak_edge_on_high_severity(self):
         g = self._build(
-            mastery_rows=[_mastery_row("arrays", mastery_score=75.0)],
+            mastery_rows=[_mastery_row("arrays", mastery_score=0.75)],
             gap_rows=[_gap_row("arrays", severity=0.7)],
         )
         self.assertEqual(g.concept_edges["arrays"].edge_type, EdgeType.WEAK)
@@ -429,7 +426,7 @@ class TestGraphAssembly(unittest.TestCase):
             ConceptConceptEdge("arrays", "sorting", EdgeType.COOCCURS, 0.5)
         ]
         g = self._build(mastery_rows=[
-            _mastery_row("arrays", mastery_score=75.0),
+            _mastery_row("arrays", mastery_score=0.75),
         ])
         self.assertIn("arrays", g.cc_edges)
         self.assertEqual(g.cc_edges["arrays"][0].target_slug, "sorting")
@@ -453,7 +450,7 @@ class TestGraphAssembly(unittest.TestCase):
         ]
         # user has no mastery on "graphs" at all
         g = self._build(mastery_rows=[
-            _mastery_row("arrays", mastery_score=75.0),
+            _mastery_row("arrays", mastery_score=0.75),
         ])
         self.assertIn("graphs", g.cc_edges)
         # and the lock check must actually see it
@@ -466,8 +463,8 @@ class TestGraphAssembly(unittest.TestCase):
 
     def test_mastered_concepts(self):
         g = self._build(mastery_rows=[
-            _mastery_row("arrays",  mastery_score=80.0),
-            _mastery_row("sorting", mastery_score=50.0),
+            _mastery_row("arrays",  mastery_score=0.8),
+            _mastery_row("sorting", mastery_score=0.5),
         ])
         mastered = g.mastered_concepts()
         self.assertIn("arrays",  mastered)
@@ -475,7 +472,7 @@ class TestGraphAssembly(unittest.TestCase):
 
     def test_weak_concepts(self):
         g = self._build(
-            mastery_rows=[_mastery_row("arrays", mastery_score=75.0)],
+            mastery_rows=[_mastery_row("arrays", mastery_score=0.75)],
             gap_rows=[_gap_row("arrays", severity=0.7)],
         )
         self.assertIn("arrays", g.weak_concepts())
@@ -485,7 +482,7 @@ class TestGraphAssembly(unittest.TestCase):
             "half_life": 1.0,
             "last_review": "2020-01-01T00:00:00+00:00",  # very old
         }}}
-        db = _make_db(mastery_rows=[_mastery_row("arrays", mastery_score=75.0)])
+        db = _make_db(mastery_rows=[_mastery_row("arrays", mastery_score=0.75)])
         svc = UserGraphService(db=db, redis=None, bkt={}, hlr=hlr)
         g = svc.get(USER_ID)
         self.assertIn("arrays", g.urgent_concepts())
@@ -802,7 +799,7 @@ class TestUserStateVector(unittest.TestCase):
     def test_embedding_stored_on_user_node(self):
         b = UserStateBuilder(self._qdrant_mock())
         g = self._graph_with_concepts()
-        s = b.build(g)
+        b.build(g)
         self.assertIsNotNone(g.user.embedding)
         self.assertEqual(len(g.user.embedding), FULL_DIM)
 
