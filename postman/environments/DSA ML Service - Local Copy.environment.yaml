@@ -5,4 +5,4 @@ values:
   - key: user_id
     value: postman_demo_user
   - key: auth_token
-    value: GUJtQo-YwPqM-f-YZi7vFL7JozIdgKO-2b9iUXn3350
+    value: REPLACE_WITH_TOKEN_FROM_seed_test_session.py
