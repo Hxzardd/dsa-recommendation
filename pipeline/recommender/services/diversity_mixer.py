@@ -126,22 +126,38 @@ class DiversityMixer:
 
     # ------------------------------------------------------------- caps
 
+    def _primary_tag(self, mc: MergedCandidate) -> Optional[str]:
+        """The tag the topic-diversity cap counts against. Most catalog
+        entries carry 3-5 topic_tags (a real pattern + several secondary
+        attributes, e.g. ["dp", "array", "state_machine_dp", "tabulation"]),
+        not one-topic-per-problem. Capping against EVERY tag meant a
+        candidate could burn down 3-5 different tags' budgets in one pick,
+        so a handful of picks exhausted whatever tag happens to be common
+        across the catalog (e.g. "array") and silently starved the slate
+        well short of k even with plenty of relevant candidates left.
+        Capping on just the first (primary) tag keeps the intended
+        "spans multiple topics" diversity property without that runaway
+        multi-tag exhaustion."""
+        tags = mc.topic_tags or []
+        return tags[0] if tags else None
+
     def _within_caps(self, mc: MergedCandidate, pool_counts: dict, topic_counts: dict) -> bool:
         if self.max_per_pool is not None:
             for pool in mc.pool_sources:
                 if pool_counts.get(pool, 0) >= self.max_per_pool:
                     return False
         if self.max_per_topic is not None:
-            for tag in (mc.topic_tags or []):
-                if topic_counts.get(tag, 0) >= self.max_per_topic:
-                    return False
+            primary = self._primary_tag(mc)
+            if primary is not None and topic_counts.get(primary, 0) >= self.max_per_topic:
+                return False
         return True
 
     def _record_caps(self, mc: MergedCandidate, pool_counts: dict, topic_counts: dict) -> None:
         for pool in mc.pool_sources:
             pool_counts[pool] = pool_counts.get(pool, 0) + 1
-        for tag in (mc.topic_tags or []):
-            topic_counts[tag] = topic_counts.get(tag, 0) + 1
+        primary = self._primary_tag(mc)
+        if primary is not None:
+            topic_counts[primary] = topic_counts.get(primary, 0) + 1
 
 
 def mix_candidates(candidates: list, k: int, max_per_pool: int = None,

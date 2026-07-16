@@ -315,6 +315,58 @@
       }
     },
     {
+      "name": "Get single topic recommendation",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/topic/recommend/{{user_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "topic",
+            "recommend",
+            "{{user_id}}"
+          ]
+        },
+        "description": "Single best-next-topic for this user (not a problem list) -- priority: due-for-review > in-progress topic closest to mastery > newly-unlocked topic > novel topic reachable from a mastered concept > cold-start fallback. Pure UserGraph logic, no Qdrant needed. Response: {\"userId\", \"topicId\", \"reason\"}."
+      }
+    },
+    {
+      "name": "Topic-based problem recommendation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/topic/recommend/problems",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "topic",
+            "recommend",
+            "problems"
+          ]
+        },
+        "description": "Backend already knows which topic it wants (topicId) -- returns problems FOR THAT TOPIC ranked by relevance to the user's own level (their current BKT mastery on this exact topic vs each candidate's real Qdrant difficulty_score), not a fixed difficulty band. A 0.25-mastery user and a 0.75-mastery user asking for the same topicId get genuinely different, level-appropriate problems. Respects prereq gating (graph.is_locked) and never re-serves solved problems. Response: {\"userId\", \"topicId\", \"recommendations\": [{problem_id, title, title_slug, difficulty_score, topic_tags, predicted_success}]}.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"postman_demo_user\",\n  \"topicId\": \"array\",\n  \"limit\": 10\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "Seeding (CF/LC history import)",
       "description": "These two routes DO check a header -- X-User-Id must equal {{user_id}} or you get a 403 (see routes/seeding.py's require_same_user docstring for why this is a placeholder, not real auth).",
       "item": [

@@ -15,7 +15,8 @@ from fastapi import HTTPException
 import db_env
 from database.postgres.db import get_connection, release_connection, get_user_mastery, get_user_hlr
 from pipeline.recommender.services.neo4j_graph_store import Neo4jGraphStore
-from pipeline.recommender.services.recommend import get_recommendations
+from pipeline.recommender.services.recommend import get_recommendations, _get_graph, _resolve_titles
+from pipeline.recommender.services.topic_recommend import recommend_topic, recommend_problems_for_topic
 
 log = logging.getLogger(__name__)
 
@@ -181,5 +182,105 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
         # would leak one pool slot on EVERY /recommend call and exhaust the
         # pool after 10 requests. release_connection() (putconn()) is the
         # only way to actually return the slot.
+        if db_wrapper is not None:
+            release_connection(db_wrapper.conn)
+
+
+def handle_topic_problem_recommend(user_id: str, topic_id: str, limit: int = 10) -> dict:
+    """
+    Topic-based problem recommendation: caller (backend) already knows
+    which topic it wants ("backend's demand" -- e.g. a topic-picker UI),
+    this returns problems for THAT topic ranked by relevance to the
+    user's own level (BKT mastery on this topic vs each candidate's real
+    Qdrant difficulty_score), not a fixed difficulty band. See
+    topic_recommend.recommend_problems_for_topic's docstring for the
+    relevance formula.
+    """
+    try:
+        mastery = get_user_mastery(user_id) or {}
+        hlr = get_user_hlr(user_id) or {}
+    except (RuntimeError, psycopg2.Error) as exc:
+        log.warning("Postgres unavailable (%s: %s) -- cold-start for user %s",
+                   exc.__class__.__name__, exc, user_id)
+        mastery, hlr = {}, {}
+
+    bkt_store = {user_id: mastery}
+    hlr_store = {user_id: hlr}
+
+    db_wrapper = _get_db_wrapper()
+    try:
+        graph = _get_graph(user_id, db_wrapper, None, _get_neo4j_store(), bkt_store, hlr_store)
+        qdrant = _get_qdrant()
+        candidates = recommend_problems_for_topic(graph, qdrant, COLLECTION, topic_id, n=limit)
+
+        payloads = _resolve_titles([c["problem_id"] for c in candidates], qdrant, COLLECTION)
+        recommendations = [
+            {
+                "problem_id": c["problem_id"],
+                "title": payloads.get(c["problem_id"], {}).get("title"),
+                "title_slug": payloads.get(c["problem_id"], {}).get("title_slug"),
+                "difficulty_score": c["difficulty_score"],
+                "topic_tags": c["topic_tags"],
+                "predicted_success": c["predicted_success"],
+            }
+            for c in candidates
+        ]
+        return {
+            "userId": user_id,
+            "topicId": topic_id,
+            "recommendations": recommendations,
+        }
+    except Exception as exc:
+        log.error(
+            "Topic-based problem recommendation failed for user %s topic %s: %s",
+            user_id, topic_id, exc, exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Topic recommendation engine encountered an error",
+        )
+    finally:
+        if db_wrapper is not None:
+            release_connection(db_wrapper.conn)
+
+
+def handle_topic_recommend(user_id: str) -> dict:
+    """
+    Single best-next-topic recommendation -- "what ONE topic should this
+    user work on next", not a problem list. Builds the same UserGraph
+    handle_recommend does (same mastery/HLR read, same db_wrapper bootstrap
+    fallback), then picks one topic via topic_recommend.recommend_topic
+    instead of running the full 7-pool pipeline -- no Qdrant needed.
+    """
+    try:
+        mastery = get_user_mastery(user_id) or {}
+        hlr = get_user_hlr(user_id) or {}
+    except (RuntimeError, psycopg2.Error) as exc:
+        log.warning("Postgres unavailable (%s: %s) -- cold-start for user %s",
+                   exc.__class__.__name__, exc, user_id)
+        mastery, hlr = {}, {}
+
+    bkt_store = {user_id: mastery}
+    hlr_store = {user_id: hlr}
+
+    db_wrapper = _get_db_wrapper()
+    try:
+        graph = _get_graph(user_id, db_wrapper, None, _get_neo4j_store(), bkt_store, hlr_store)
+        topic_id, reason = recommend_topic(graph)
+        return {
+            "userId": user_id,
+            "topicId": topic_id,
+            "reason": reason,
+        }
+    except Exception as exc:
+        log.error(
+            "Topic recommendation failed for user %s: %s",
+            user_id, exc, exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Topic recommendation engine encountered an error",
+        )
+    finally:
         if db_wrapper is not None:
             release_connection(db_wrapper.conn)

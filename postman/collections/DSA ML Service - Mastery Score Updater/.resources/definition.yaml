@@ -9,7 +9,7 @@ variables:
   base_url: http://localhost:8000
   user_id: postman_demo_user
 auth:
-  - id: ff38c7f7-fada-45f2-9eb4-a5b664648bb9
+  - id: 886a17cd-ff16-4b75-857b-942a6b844bbf
     type: bearer
     name: bearer auth
     credentials:

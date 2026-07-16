@@ -192,7 +192,18 @@ def update_bkt(current_p_l, observed, difficulty=None):
     else:
         effective_cap = MAX_MASTERY_DELTA
     delta = new_p_l_raw - current_p_l
-    delta = max(-effective_cap, min(effective_cap, delta))
+
+    # Soft-saturate instead of hard-clipping: a plain min/max clip means any
+    # raw delta beyond the cap (which cold-start submissions almost always
+    # produce -- see MAX_MASTERY_DELTA's docstring) lands on the EXACT same
+    # final value, an abrupt flat wall with no texture between "confidently
+    # solved" and "barely solved" once both exceed it. tanh approaches the
+    # cap asymptotically instead of hitting it outright -- small deltas pass
+    # through almost unchanged (tanh(x)~=x near 0), large ones taper off
+    # smoothly toward +-effective_cap, so the whole raw-delta -> final-delta
+    # mapping is one continuous curve rather than linear-then-flat.
+    if effective_cap > 0:
+        delta = effective_cap * math.tanh(delta / effective_cap)
 
     if delta > 0:
         # Mastery-proximity dampening -- diminishing returns as the topic
@@ -213,6 +224,20 @@ def update_bkt(current_p_l, observed, difficulty=None):
             gap = difficulty - current_p_l
             if gap < _TRIVIAL_GAP_THRESHOLD:
                 delta *= max(_TRIVIAL_DAMPEN_FLOOR, 1.0 + gap)
+    elif observed >= LEARNING_TRANSITION_THRESHOLD:
+        # A credited success (verdict=OK, strong enough to cross the
+        # learning-transition threshold) can still produce a NEGATIVE raw
+        # Bayesian delta at high prior mastery -- e.g. current_p_l=0.85,
+        # observed=0.73 nets a small pull-down purely from the math (0.73
+        # reads as "weaker than what 0.85 mastery would predict"), even
+        # though the attempt was correct and got learning credit. A correct
+        # solve should never actively PUNISH mastery, only dampen the
+        # reward down to (but not below) zero -- that's a distinct case
+        # from forgetting/regression, which only applies to attempts that
+        # did NOT cross the threshold (handled by the trivial-gap block
+        # above being skipped, delta staying whatever the raw negative
+        # Bayesian pull was).
+        delta = max(delta, 0.0)
 
     new_p_l = current_p_l + delta
     return round(min(1.0, max(0.0, new_p_l)), 4)

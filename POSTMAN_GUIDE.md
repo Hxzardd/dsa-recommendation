@@ -148,6 +148,68 @@ Runs the full ML pipeline (candidate pools -> ranking). Needs Qdrant and
 Neo4j reachable (see RUNNING.md step 2); degrades to a cold-start pool if
 Postgres mastery/HLR reads fail or the user has none yet.
 
+## 5a. Get single topic recommendation (`GET /topic/recommend/{{user_id}}`)
+
+"What ONE topic should this user work on next" -- not a problem list.
+Pure `UserGraph` logic (no Qdrant needed), priority order:
+
+1. Most urgent topic due for spaced review (HLR forgetting curve)
+2. In-progress topic closest to mastery (finish what's nearly done)
+3. Newly-unlocked topic (its prereq was just mastered, not started yet)
+4. Novel topic reachable from a mastered concept (same reachability the
+   novelty pool uses)
+5. Cold start: no graph data at all yet -- first starter concept
+
+```json
+{
+  "userId": "postman_demo_user",
+  "topicId": "array",
+  "reason": "in_progress"
+}
+```
+
+## 5b. Topic-based problem recommendation (`POST /topic/recommend/problems`)
+
+Backend already knows which topic it wants problems for (e.g. a
+topic-picker UI, "practice arrays") -- this is the "backend's demand"
+endpoint. Returns problems for that topic ranked by relevance to the
+user's own level: their current BKT mastery on that exact topic vs each
+candidate's real Qdrant `difficulty_score`, ranked by closeness to the
+same productive-struggle sweet spot (`predicted_success` ~0.68) the main
+`/recommend` pipeline's ZPD filter targets. A 0.25-mastery user and a
+0.75-mastery user asking for the same `topicId` get genuinely different,
+level-appropriate problems -- not the same list. Respects prereq gating
+(`graph.is_locked`) and never re-serves solved problems.
+
+Base request body (also at `postman/telemetry_samples/07_topic_based_recommendation.json`):
+
+```json
+{
+  "userId": "postman_demo_user",
+  "topicId": "array",
+  "limit": 10
+}
+```
+
+Response shape:
+
+```json
+{
+  "userId": "postman_demo_user",
+  "topicId": "array",
+  "recommendations": [
+    {
+      "problem_id": "wco1t5htc04vz0601p97qfae",
+      "title": "Longest Palindromic Substring",
+      "title_slug": "longest-palindromic-substring",
+      "difficulty_score": 0.442,
+      "topic_tags": ["dp", "array", "two_pointers", "tabulation"],
+      "predicted_success": 0.68
+    }
+  ]
+}
+```
+
 ## 6. Seeding (`POST /seed_hlr/{{user_id}}`, `POST /seed_bkt/{{user_id}}`)
 
 Backfills mastery/HLR from a linked Codeforces/LeetCode handle. Requires
