@@ -26,11 +26,32 @@
 
 -- email is NOT NULL with no default in the real deployed schema --
 -- seed_test_session.py synthesizes "{user_id}@test.local" for it.
+--
+-- name/onboarding_completed are read by UserGraphService._fetch_user()
+-- (SELECT u.id, u.name, u.onboarding_completed, x.total_xp, x.current_level
+-- FROM "user" u LEFT JOIN user_xp x ...) -- without them that query raises,
+-- _fetch_user's try/except swallows it and returns None, _build() then
+-- raises ValueError("User not found"), and _get_graph's caller falls back
+-- to a brand-new cold-start graph -- silently discarding whatever real
+-- mastery/HLR state get_user_mastery()/get_user_hlr() already loaded, for
+-- EVERY user, on EVERY /recommend and /topic/recommend call locally.
 CREATE TABLE IF NOT EXISTS "user" (
-    id                TEXT PRIMARY KEY,
-    email             TEXT NOT NULL,
-    linked_codeforces  TEXT,
-    linked_leetcode    TEXT
+    id                    TEXT PRIMARY KEY,
+    email                 TEXT NOT NULL,
+    name                  TEXT,
+    onboarding_completed  BOOLEAN NOT NULL DEFAULT FALSE,
+    linked_codeforces     TEXT,
+    linked_leetcode       TEXT
+);
+
+-- LEFT JOINed by _fetch_user() for total_xp/current_level -- absence alone
+-- wasn't fatal (LEFT JOIN + `x.total_xp` reads as NULL -> defaults to 0/1
+-- in UserNode), but the table itself must exist or the whole SELECT
+-- throws before the LEFT JOIN's NULL-tolerance ever applies.
+CREATE TABLE IF NOT EXISTS user_xp (
+    user_id       TEXT PRIMARY KEY REFERENCES "user"(id),
+    total_xp      INTEGER NOT NULL DEFAULT 0,
+    current_level INTEGER NOT NULL DEFAULT 1
 );
 
 -- Backend-owned topic catalog. user_topic_mastery.topic_id and
