@@ -116,11 +116,26 @@ INSERT INTO topic (id, slug) VALUES
     ('union-find', 'union-find')
 ON CONFLICT (id) DO NOTHING;
 
+-- confidence..next_review_date are read by
+-- UserGraphService._load_topic_mastery() (SELECT topic_id, mastery_score,
+-- confidence, attempt_count, problems_solved, last_attempted, sm2_ef,
+-- sm2_interval, next_review_date FROM user_topic_mastery ...) -- without
+-- them that SELECT raises, the try/except swallows it and returns early,
+-- so a locally-bootstrapped graph gets ZERO concept edges even when
+-- get_user_mastery() (a separate, narrower query) already succeeded --
+-- same silent-fallback failure mode as the "user" table fix above.
 CREATE TABLE IF NOT EXISTS user_topic_mastery (
-    user_id       TEXT NOT NULL REFERENCES "user"(id),
-    topic_id      TEXT NOT NULL REFERENCES topic(id),
-    mastery_score DOUBLE PRECISION NOT NULL,
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    user_id          TEXT NOT NULL REFERENCES "user"(id),
+    topic_id         TEXT NOT NULL REFERENCES topic(id),
+    mastery_score    DOUBLE PRECISION NOT NULL,
+    confidence       TEXT,              -- 'low' | 'medium' | 'high', defaults to 'medium' if null
+    attempt_count    INTEGER,
+    problems_solved  INTEGER,
+    last_attempted   TIMESTAMPTZ,
+    sm2_ef           DOUBLE PRECISION,  -- defaults to 2.5 if null
+    sm2_interval     INTEGER,           -- defaults to 1 if null
+    next_review_date DATE,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, topic_id)
 );
 
