@@ -35,7 +35,7 @@ def main():
     ap.add_argument("--graph-source", choices=["tags", "normalized", "neo4j"], default=None,
                     help="curated concept edges: none / JSON files / Neo4j")
     ap.add_argument("--graph-dir", default=None,
-                    help="Aashray's graph JSON folder (default ./question-graph/data)")
+                    help=" graph JSON folder (default ./question-graph/data)")
     ap.add_argument("--problem-feature", default=None,
                     choices=["question_solution_embedding", "question_embedding",
                              "solution_embedding"])
@@ -66,7 +66,31 @@ def main():
     print("#" * 62)
     print(C.summary())
 
-    build_graph()
+    graph_data = build_graph()
+
+    # Mirror the offline concept graph (topic nodes, problem nodes,
+    # problem-topic edges, topic-topic edges) into Neo4j, kept separate
+    # from the online per-user graph -- see pipeline/graphs/
+    # neo4j_offline_writer.py's module docstring. Reuses
+    # push_offline_graph_to_neo4j.py's main() so this reads straight from
+    # the same question-graph/data/*.json files regenerate_graph_artifacts.py
+    # just (re)wrote (not graph_data's tensors), and there is exactly ONE
+    # place that knows how to do this push, not two independently-drifting
+    # copies. Additive and best-effort: NEO4J_PASSWORD unset (or any
+    # connection failure) just skips this, same as every other Neo4j
+    # touchpoint in this repo -- Qdrant + the local .npz/.json artifacts
+    # remain the actual source of truth this repo runs on.
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent.parent))
+        import pipeline.graphs.push_offline_graph_to_neo4j as _push
+        _push.main()
+    except SystemExit:
+        pass   # _push.main() exits non-zero on a missing file / unreachable Neo4j -- non-fatal here
+    except Exception as e:
+        print(f"\n[!] Neo4j offline graph mirror skipped: {e.__class__.__name__}: {str(e)[:140]}")
+
     final_cluster = train()   # train() returns final topic-clustering score, not AUC
 
     if not args.skip_qdrant:

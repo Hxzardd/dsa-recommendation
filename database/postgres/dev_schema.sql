@@ -54,10 +54,16 @@ CREATE TABLE IF NOT EXISTS user_xp (
     current_level INTEGER NOT NULL DEFAULT 1
 );
 
--- Backend-owned topic catalog. user_topic_mastery.topic_id and
--- user_hlr_state.topic_id are FKs into this table's opaque `id` (NOT an
--- ML-pipeline slug like "array") -- database/postgres/topic_taxonomy.py
--- translates between the two via this table's `slug` column, and
+-- Backend-owned topic catalog. As of the backend's taxonomy-reconciliation
+-- PR this is exactly the 70 canonical tags in data/topic_tags_taxonomy_v2.json,
+-- hyphenated (verified directly against a live query: all 70 canonical
+-- tags, hyphenated, match all 70 live topic.slug values exactly). See
+-- database/postgres/topic_taxonomy.py's module docstring for the full
+-- reconciliation story -- the previous version of this INSERT listed the
+-- OLD, PRE-reconciliation 44-topic schema, which no longer exists live.
+-- user_topic_mastery.topic_id / user_hlr_state.topic_id FK into this
+-- table's opaque `id` (NOT an ML-pipeline slug like "array") --
+-- topic_taxonomy.py translates between the two via `slug`, and
 -- database/postgres/db.py's _load_topic_cache() queries `SELECT id, slug
 -- FROM topic` directly, so this table must exist with real slug values
 -- for any mastery/HLR read or write to work locally. `id = slug` here for
@@ -70,47 +76,73 @@ CREATE TABLE IF NOT EXISTS topic (
 );
 
 INSERT INTO topic (id, slug) VALUES
-    ('arrays', 'arrays'),
+    ('array', 'array'),
     ('backtracking', 'backtracking'),
     ('bfs', 'bfs'),
-    ('binary-indexed-tree', 'binary-indexed-tree'),
-    ('binary-lifting', 'binary-lifting'),
     ('binary-search', 'binary-search'),
     ('binary-search-tree', 'binary-search-tree'),
+    ('binary-tree', 'binary-tree'),
+    ('bit-manipulation', 'bit-manipulation'),
+    ('bitmask', 'bitmask'),
     ('bitmask-dp', 'bitmask-dp'),
-    ('bitwise', 'bitwise'),
+    ('combinatorics', 'combinatorics'),
+    ('concurrency', 'concurrency'),
+    ('connected-components', 'connected-components'),
+    ('counting', 'counting'),
+    ('data-stream', 'data-stream'),
+    ('database', 'database'),
     ('design', 'design'),
     ('dfs', 'dfs'),
     ('digit-dp', 'digit-dp'),
     ('dijkstra', 'dijkstra'),
+    ('divide-and-conquer', 'divide-and-conquer'),
     ('dynamic-programming', 'dynamic-programming'),
+    ('enumeration', 'enumeration'),
     ('fast-slow-pointers', 'fast-slow-pointers'),
+    ('fenwick-tree', 'fenwick-tree'),
     ('floyd-warshall', 'floyd-warshall'),
+    ('game-theory', 'game-theory'),
     ('geometry', 'geometry'),
-    ('graphs', 'graphs'),
+    ('graph', 'graph'),
     ('greedy', 'greedy'),
     ('hash-map', 'hash-map'),
     ('heap', 'heap'),
+    ('in-place-modification', 'in-place-modification'),
+    ('interval-dp', 'interval-dp'),
+    ('kadane', 'kadane'),
     ('kmp', 'kmp'),
-    ('linked-lists', 'linked-lists'),
+    ('knapsack-dp', 'knapsack-dp'),
+    ('linked-list', 'linked-list'),
     ('math', 'math'),
+    ('matrix', 'matrix'),
     ('merge-intervals', 'merge-intervals'),
+    ('minimum-spanning-tree', 'minimum-spanning-tree'),
+    ('monotonic-queue', 'monotonic-queue'),
     ('monotonic-stack', 'monotonic-stack'),
     ('number-theory', 'number-theory'),
+    ('ordered-set', 'ordered-set'),
     ('prefix-sum', 'prefix-sum'),
-    ('priority-queue', 'priority-queue'),
+    ('prefix-xor', 'prefix-xor'),
+    ('probability', 'probability'),
     ('queue', 'queue'),
+    ('randomized', 'randomized'),
+    ('range-query', 'range-query'),
     ('recursion', 'recursion'),
+    ('rolling-hash', 'rolling-hash'),
     ('segment-tree', 'segment-tree'),
+    ('sequence-dp', 'sequence-dp'),
+    ('shell', 'shell'),
     ('shortest-path', 'shortest-path'),
     ('simulation', 'simulation'),
     ('sliding-window', 'sliding-window'),
-    ('stacks', 'stacks'),
+    ('sorting', 'sorting'),
+    ('stack', 'stack'),
+    ('state-machine-dp', 'state-machine-dp'),
+    ('string', 'string'),
     ('string-matching', 'string-matching'),
-    ('strings', 'strings'),
     ('topological-sort', 'topological-sort'),
+    ('tree', 'tree'),
     ('tree-dp', 'tree-dp'),
-    ('trees', 'trees'),
     ('trie', 'trie'),
     ('two-pointers', 'two-pointers'),
     ('union-find', 'union-find')
@@ -163,3 +195,46 @@ CREATE TABLE IF NOT EXISTS session (
     ip_address  TEXT,
     user_agent  TEXT
 );
+
+-- Backend-owned problem catalog. problem_id here is the backend's own
+-- opaque id (a CUID in the real deployed schema) -- NOT the same as this
+-- ML service's own internal ingestion hash (data/1000_manifest_final.json's
+-- problem_id, also used as Qdrant's problem_id payload field). The two are
+-- different id systems that happen to agree on THIS sandbox's data because
+-- the backend's problem table was seeded from the same manifest -- in a
+-- real deployment they will differ, which is exactly why
+-- resolve_problem_ids_by_title_slugs() joins on title_slug (the one field
+-- both sides agree on) rather than assuming problem_id lines up.
+CREATE TABLE IF NOT EXISTS problem (
+    problem_id  TEXT PRIMARY KEY,
+    title_slug  TEXT NOT NULL UNIQUE
+);
+
+-- Write half of the attempt/skip feedback loop --
+-- database/postgres/db.py's save_recommendation_log() (called from
+-- recommendation_controller.py::handle_recommend) inserts one row per
+-- recommended problem; mark_recommendation_attempted() (called from
+-- submission_controller.py::handle_update) flips was_attempted when a
+-- later submission matches a prior recommendation by user_id + problem_id.
+CREATE TABLE IF NOT EXISTS recommendation_log (
+    log_id          TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES "user"(id),
+    problem_id      TEXT NOT NULL REFERENCES problem(problem_id),
+    recommended_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source          TEXT,
+    was_attempted   BOOLEAN NOT NULL DEFAULT FALSE,
+    was_skipped     BOOLEAN NOT NULL DEFAULT FALSE,
+    skip_count      INTEGER NOT NULL DEFAULT 0,
+    session_mode    TEXT
+);
+
+-- Matches the real deployed schema exactly (verified against a live
+-- instance) -- at most one PENDING (not-yet-attempted) recommendation per
+-- user+problem+pool at a time. save_recommendation_log()'s INSERT uses
+-- ON CONFLICT (user_id, problem_id, source) WHERE was_attempted = false
+-- AND source IS NOT NULL, which requires this exact partial index to exist
+-- (Postgres matches ON CONFLICT targets against a partial unique index's
+-- predicate, not just its columns).
+CREATE UNIQUE INDEX IF NOT EXISTS recommendation_log_pending_unique_idx
+    ON recommendation_log (user_id, problem_id, source)
+    WHERE was_attempted = false AND source IS NOT NULL;

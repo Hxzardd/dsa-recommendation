@@ -1,95 +1,86 @@
 """
-Maps this ML service's topic taxonomy (the underscore/singular slugs used by
-BKT/HLR/Qdrant's topic_tags -- see data/problem_topic_edges_normalized.json
-and data/source-target.txt, which are identical) onto the backend's `topic`
-table `slug` column (hyphenated, and sometimes pluralised/differently named --
-e.g. "arrays" not "array", "dynamic-programming" not "dp").
+Maps this ML service's topic slugs onto the backend's `topic` table `slug`
+column.
 
-Every entry below was derived by diffing the ML taxonomy's real tag set
-against a live query of the `topic` table's actual `slug` values, keeping
-only unambiguous normalisation matches (hyphen<->underscore, singular<->
-plural, and a handful of confirmed synonyms like dynamic-programming/dp,
-graphs/graph). Nothing here is guessed -- see ML_SLUG_TO_TOPIC_SLUG's
-construction history for the verification query.
+As of the backend's taxonomy-reconciliation PR, the backend's `topic`
+table holds exactly the 70 canonical tags from
+data/topic_tags_taxonomy_v2.json, hyphenated (e.g. "dynamic_programming"
+-> "dynamic-programming") -- verified directly against a live query of the
+`topic` table: all 70 canonical tags, hyphenated, match all 70 live
+`topic.slug` values exactly, no gaps either direction. So the mapping is
+now a straight, total, bijective transform (canonical_tag <-> topic.slug
+via underscore<->hyphen) -- no hand-curated per-topic table needed
+anymore (the old version of this file hard-coded a 35-entry table against
+the backend's PRE-reconciliation 44-topic schema; that schema no longer
+exists live and every lookup against it silently returned None).
 
-Nine backend topics have NO ML-taxonomy counterpart at all (the ML pipeline
-never emits a topic for these): binary-indexed-tree, binary-lifting,
-binary-search, binary-search-tree, geometry, priority-queue, recursion,
-segment-tree, topological-sort. mastery/HLR data can never be written for
-these topics via the ML pipeline as it exists today -- that's a real gap
-between the two taxonomies, not something this file can safely paper over
-by guessing a match.
-
-This service never migrates the `topic` table (see dev_schema.sql's header
-comment -- it's backend-owned); this mapping only translates at read/write
-time via the table's existing `slug` column.
+The ML pipeline's OWN topic tags (Qdrant topic_tags, BKT/HLR mastery
+keys) are being migrated to use these same 70 canonical tags directly. For
+backward compatibility with any pre-migration data still using the old,
+finer-grained 72-tag taxonomy (data/problem_topic_edges_normalized.json's
+previous tag set), `legacy_and_ai_taxonomy_map` in the taxonomy file
+collapses each old tag to its (possibly multiple) canonical equivalent(s)
+-- this module uses the first/primary one for FK-write purposes, matching
+the backend's own example (two_pass_scan -> greedy).
 """
 
 from __future__ import annotations
 
-ML_SLUG_TO_TOPIC_SLUG = {
-    "array":               "arrays",
-    "backtracking":        "backtracking",
-    "bfs":                 "bfs",
-    "bitmask_dp":          "bitmask-dp",
-    "bitwise":             "bitwise",
-    "design":              "design",
-    "dfs":                 "dfs",
-    "digit_dp":            "digit-dp",
-    "dijkstra":            "dijkstra",
-    "dp":                  "dynamic-programming",
-    "fast_slow_pointers":  "fast-slow-pointers",
-    "floyd_warshall":      "floyd-warshall",
-    "graph":               "graphs",
-    "greedy":              "greedy",
-    "hash_map":            "hash-map",
-    "heap":                "heap",
-    "kmp":                 "kmp",
-    "linked_list":         "linked-lists",
-    "math":                "math",
-    "merge_intervals":     "merge-intervals",
-    "monotonic_stack":     "monotonic-stack",
-    "number_theory":       "number-theory",
-    "prefix_sum":          "prefix-sum",
-    "queue":               "queue",
-    "shortest_path":       "shortest-path",
-    "simulation":          "simulation",
-    "sliding_window":      "sliding-window",
-    "stack":               "stacks",
-    "string_matching":     "string-matching",
-    "string":              "strings",
-    "tree_dp":             "tree-dp",
-    "tree":                "trees",
-    "trie":                "trie",
-    "two_pointers":        "two-pointers",
-    "union_find":          "union-find",
-}
+import json
+from pathlib import Path
 
-# Backend topic.slug values with no ML-taxonomy counterpart -- documented so
-# callers can tell "no mapping exists" apart from "mapping lookup bug".
-UNMAPPED_TOPIC_SLUGS = frozenset({
-    "binary-indexed-tree", "binary-lifting", "binary-search",
-    "binary-search-tree", "geometry", "priority-queue", "recursion",
-    "segment-tree", "topological-sort",
-})
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent
+_TAXONOMY_PATH = _BASE_DIR / "data" / "topic_tags_taxonomy_v2.json"
+
+with open(_TAXONOMY_PATH, encoding="utf-8-sig") as f:
+    _TAXONOMY = json.load(f)
+
+CANONICAL_TAGS = frozenset(_TAXONOMY["canonical_tags"])
+
+# legacy_and_ai_taxonomy_map ships without an entry for "two_pass_scan" --
+# confirmed the one gap in an otherwise-complete map covering all 72 old
+# ML tags. Backend's own review named the exact collapse target.
+_LEGACY_TAG_MAP: dict = dict(_TAXONOMY["legacy_and_ai_taxonomy_map"])
+_LEGACY_TAG_MAP.setdefault("two_pass_scan", ["greedy"])
 
 
-TOPIC_SLUG_TO_ML_SLUG = {v: k for k, v in ML_SLUG_TO_TOPIC_SLUG.items()}
+def canonical_for_ml_slug(ml_slug: str) -> str | None:
+    """
+    Any ML-pipeline topic slug -> its canonical tag. Already-canonical
+    slugs pass through unchanged; legacy (pre-migration) slugs collapse to
+    their primary canonical equivalent via the taxonomy's own map. None if
+    the slug is neither -- callers must skip the write, not guess.
+    """
+    if ml_slug in CANONICAL_TAGS:
+        return ml_slug
+    mapped = _LEGACY_TAG_MAP.get(ml_slug)
+    return mapped[0] if mapped else None
 
 
 def topic_slug_for_ml_slug(ml_slug: str) -> str | None:
-    """Translate an ML-pipeline topic slug (e.g. "array") to the backend
-    topic table's slug (e.g. "arrays"). Returns None if the ML pipeline
-    emits a slug with no confirmed backend counterpart (e.g. fine-grained
-    pattern tags like "kadane", "two_heaps" that don't correspond to any
-    of the backend's 44 coarser topic rows) -- callers must handle None by
-    skipping the write, not guessing a topic_id.
-    """
-    return ML_SLUG_TO_TOPIC_SLUG.get(ml_slug)
+    """ML-pipeline slug (legacy or canonical, e.g. "two_pass_scan" or
+    "array") -> backend topic table slug (e.g. "greedy" or "array" with
+    underscores replaced by hyphens, e.g. "dynamic-programming")."""
+    canonical = canonical_for_ml_slug(ml_slug)
+    return canonical.replace("_", "-") if canonical else None
 
 
 def ml_slug_for_topic_slug(topic_slug: str) -> str | None:
-    """Reverse of topic_slug_for_ml_slug -- translate a backend topic
-    table slug back to the ML-pipeline slug UserGraph/pools expect. None
-    for the 9 UNMAPPED_TOPIC_SLUGS."""
-    return TOPIC_SLUG_TO_ML_SLUG.get(topic_slug)
+    """Reverse of topic_slug_for_ml_slug -- backend topic.slug -> the
+    canonical ML tag (this is total/bijective post-reconciliation, so
+    every live topic.slug has a valid ML-slug counterpart)."""
+    canonical = topic_slug.replace("-", "_")
+    return canonical if canonical in CANONICAL_TAGS else None
+
+
+_LEETCODE_TAG_MAP: dict = _TAXONOMY["official_leetcode_tag_map"]
+
+
+def canonical_tags_for_leetcode_slug(lc_slug: str) -> list[str]:
+    """LeetCode's own topicTags slug (e.g. "hash-table", as returned by
+    their GraphQL API) -> our canonical ML tag(s) (e.g. ["hash_map"]).
+    Used by seeding_controller.py's LeetCode history import -- LC's tags
+    are a different taxonomy from ours and need this translation before
+    they're usable as BKT/HLR topic keys. Empty list if LC's slug has no
+    known mapping (unrecognised/new LC tag)."""
+    return list(_LEETCODE_TAG_MAP.get(lc_slug, []))

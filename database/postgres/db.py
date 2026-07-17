@@ -1,4 +1,7 @@
 import os
+import uuid
+from datetime import datetime, timezone
+
 import psycopg2
 from pathlib import Path
 from psycopg2.extras import RealDictCursor
@@ -201,6 +204,148 @@ def save_user_mastery(user_id: str, mastery: dict):
                     VALUES (%s, %s, %s, NOW())
                     ON CONFLICT (user_id, topic_id) DO NOTHING
                 """, (user_id, topic_id, mastery_score))
+        conn.commit()
+    finally:
+        release_connection(conn)
+
+
+def save_user_mastery_live(user_id: str, mastery: dict):
+    """
+    Write freshly-recomputed BKT mastery scores from a LIVE submission
+    (submission_controller.py::handle_update) -- unlike save_user_mastery
+    (CF/LC one-time import, ON CONFLICT DO NOTHING so it never clobbers
+    real in-platform progress), this MUST overwrite on every call: it's
+    the new P(L) after this exact submission, and mastery is meant to be
+    the single source of truth for that going forward. Same topic-id
+    translation as save_user_mastery -- see topic_taxonomy.py.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            for ml_slug, mastery_score in mastery.items():
+                topic_id = _ml_slug_to_topic_id(conn, ml_slug)
+                if topic_id is None:
+                    continue
+                cur.execute("""
+                    INSERT INTO user_topic_mastery (user_id, topic_id, mastery_score, updated_at)
+                    VALUES (%s, %s, %s, NOW())
+                    ON CONFLICT (user_id, topic_id) DO UPDATE SET
+                        mastery_score = EXCLUDED.mastery_score,
+                        updated_at = NOW()
+                """, (user_id, topic_id, mastery_score))
+        conn.commit()
+    finally:
+        release_connection(conn)
+
+
+def resolve_problem_ids_by_title_slugs(title_slugs: list) -> dict:
+    """
+    ML's own `problem_id` (this repo's internal ingestion hash, e.g.
+    "f07r6rjgpeoc8h18g24o9ye9") is NOT the backend's `problem.problem_id`
+    (a CUID) -- recommendation_log.problem_id FKs the latter. The join key
+    both sides agree on is `title_slug` (LeetCode-style, e.g. "two-sum"),
+    which is already on every recommendation (_resolve_titles in
+    recommend.py reads it straight from Qdrant payload). Bulk resolver:
+    {title_slug: backend problem.problem_id}, skipping slugs with no match
+    (a problem present in our Qdrant catalog but not yet in the backend's
+    `problem` table) rather than guessing.
+    """
+    if not title_slugs:
+        return {}
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT title_slug, problem_id FROM problem WHERE title_slug = ANY(%s)",
+                (list(title_slugs),),
+            )
+            return {row[0]: row[1] for row in cur.fetchall()}
+    finally:
+        release_connection(conn)
+
+
+def save_recommendation_log(user_id: str, recommendations: list, session_mode: str = None):
+    """
+    One row per recommended problem, was_attempted/was_skipped starting
+    False -- this is the write half of the attempt/skip feedback loop (see
+    mark_recommendation_attempted for the other half, called from
+    submission_controller.py::handle_update). Resolves each recommendation's
+    title_slug to the backend's real problem.problem_id via
+    resolve_problem_ids_by_title_slugs; recommendations with no title_slug
+    or no match in the backend's `problem` table are skipped rather than
+    writing a row with a guessed/invalid FK.
+
+    The real deployed schema has a partial unique index,
+    recommendation_log_pending_unique_idx, on (user_id, problem_id, source)
+    WHERE was_attempted = false AND source IS NOT NULL -- at most one
+    PENDING (not-yet-attempted) recommendation per user+problem+pool at a
+    time. ON CONFLICT below matches that exact partial index (Postgres
+    requires the predicate to match for a partial unique index) and does
+    nothing on a repeat -- the same problem being recommended again by the
+    same pool before the user has acted on it isn't a new event worth a
+    second log row.
+    """
+    title_slugs = [r.get("title_slug") for r in recommendations if r.get("title_slug")]
+    problem_ids_by_slug = resolve_problem_ids_by_title_slugs(title_slugs)
+
+    rows = []
+    now = datetime.now(timezone.utc)
+    for r in recommendations:
+        title_slug = r.get("title_slug")
+        problem_id = problem_ids_by_slug.get(title_slug) if title_slug else None
+        if problem_id is None:
+            continue
+        rows.append((
+            str(uuid.uuid4()), user_id, problem_id, now,
+            r.get("source"), False, False, 0, session_mode,
+        ))
+
+    if not rows:
+        return
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.executemany("""
+                INSERT INTO recommendation_log
+                    (log_id, user_id, problem_id, recommended_at, source,
+                     was_attempted, was_skipped, skip_count, session_mode)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, problem_id, source)
+                WHERE was_attempted = false AND source IS NOT NULL
+                DO NOTHING
+            """, rows)
+        conn.commit()
+    finally:
+        release_connection(conn)
+
+
+def mark_recommendation_attempted(user_id: str, title_slug: str):
+    """
+    Read half of the attempt/skip feedback loop's write side --
+    submission_controller.py::handle_update calls this so a submission on
+    a problem the user was actually recommended marks that
+    recommendation_log row was_attempted=TRUE. Only meaningful if the
+    problem resolves to a real backend problem.problem_id (same
+    translation as save_recommendation_log); otherwise a no-op, not an
+    error -- most submissions won't correspond to a prior /recommend call
+    at all (a user can solve any problem, recommended or not).
+    """
+    if not title_slug:
+        return
+    resolved = resolve_problem_ids_by_title_slugs([title_slug])
+    problem_id = resolved.get(title_slug)
+    if problem_id is None:
+        return
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE recommendation_log
+                SET was_attempted = TRUE
+                WHERE user_id = %s AND problem_id = %s AND was_attempted = FALSE
+            """, (user_id, problem_id))
         conn.commit()
     finally:
         release_connection(conn)

@@ -1,9 +1,11 @@
 """
 Recommendation controller.
 
-Stateless ML service -- backend sends everything needed in the request,
-ML computes and returns results. No Postgres writes here, read-only
-access to mastery/HLR tables.
+Reads mastery/HLR from Postgres (read-only), and writes one
+recommendation_log row per returned recommendation (the write half of the
+attempt/skip feedback loop -- see database.postgres.db.save_recommendation_log
+and submission_controller.py::handle_update's mark_recommendation_attempted
+for the other half).
 """
 
 import logging
@@ -13,7 +15,10 @@ import psycopg2
 from fastapi import HTTPException
 
 import db_env
-from database.postgres.db import get_connection, release_connection, get_user_mastery, get_user_hlr
+from database.postgres.db import (
+    get_connection, release_connection, get_user_mastery, get_user_hlr,
+    save_recommendation_log,
+)
 from pipeline.recommender.services.neo4j_graph_store import Neo4jGraphStore
 from pipeline.recommender.services.recommend import get_recommendations, _get_graph, _resolve_titles
 from pipeline.recommender.services.topic_recommend import recommend_topic, recommend_problems_for_topic
@@ -164,7 +169,21 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
             total_n=max(limit * 3, 30),
             k=limit,
         )
-        return result.to_dict()
+        response = result.to_dict()
+
+        # Write half of the attempt/skip feedback loop -- best-effort:
+        # a logging failure shouldn't turn a successful recommendation
+        # into a 500 for the caller, so this is caught and warned, not
+        # propagated (unlike /update's persistence, which IS the point of
+        # that call -- here the recommendations themselves are still the
+        # actual deliverable even if the log write fails).
+        try:
+            save_recommendation_log(user_id, response.get("recommendations", []))
+        except (RuntimeError, psycopg2.Error) as exc:
+            log.warning("recommendation_log write failed for user %s: %s",
+                       user_id, exc)
+
+        return response
 
     except Exception as exc:
         log.error(

@@ -29,6 +29,24 @@ Where the values actually come from:
         NEO4J_USERNAME         usually "neo4j"
         NEO4J_PASSWORD
         NEO4J_DATABASE         usually "neo4j" (Aura's default database name)
+                                -- the ONLINE per-user graph (:User/:Concept/
+                                :CC_EDGE, written by Neo4jGraphStore).
+        NEO4J_OFFLINE_DATABASE  optional -- a SEPARATE Neo4j database name
+                                for the offline concept graph the RGCN
+                                pipeline generates (topic-topic co-occurrence
+                                /prerequisite structure), kept apart from
+                                per-user online state so a full offline
+                                pipeline re-run never touches live user
+                                graphs and vice versa. Defaults to
+                                NEO4J_DATABASE if unset (same database, but
+                                pipeline/graphs/neo4j_offline_writer.py still
+                                uses distinct :OfflineTopic labels /
+                                CO_OCCURS_OFFLINE-PREREQ_OFFLINE relationship
+                                types so the two stay visually and
+                                query-wise separated even then -- Neo4j
+                                Community Edition only supports one database
+                                per instance, so the label/relationship-type
+                                separation is what actually matters there).
         AURA_INSTANCEID        (aliased as NEO4J_INSTANCEID too, either works)
         AURA_INSTANCENAME      (aliased as NEO4J_INSTANCENAME too, either works)
 """
@@ -94,6 +112,15 @@ NEO4J_URI          = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USERNAME     = os.environ.get("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD     = os.environ.get("NEO4J_PASSWORD")
 NEO4J_DATABASE     = os.environ.get("NEO4J_DATABASE", "neo4j")
+
+# Offline concept graph (RGCN-generated topic-topic structure) -- kept
+# separate from NEO4J_DATABASE's online per-user state. Defaults to the
+# same database as NEO4J_DATABASE if unset; pipeline/graphs/
+# neo4j_offline_writer.py additionally uses distinct :OfflineTopic labels
+# and CO_OCCURS_OFFLINE/PREREQ_OFFLINE relationship types regardless, so
+# the separation holds even on Neo4j Community Edition (one database per
+# instance only) -- see this module's docstring for the full rationale.
+NEO4J_OFFLINE_DATABASE = os.environ.get("NEO4J_OFFLINE_DATABASE", NEO4J_DATABASE)
 NEO4J_INSTANCEID   = os.environ.get("NEO4J_INSTANCEID")   or os.environ.get("AURA_INSTANCEID")
 NEO4J_INSTANCENAME = os.environ.get("NEO4J_INSTANCENAME") or os.environ.get("AURA_INSTANCENAME")
 
@@ -156,7 +183,21 @@ def neo4j_driver():
         driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
         driver.verify_connectivity()
         return driver
-    except Exception:
+    except Exception as exc:
+        # FIX: this used to swallow the exception entirely -- every failure
+        # mode (wrong password, DNS failure, firewall block, paused Aura
+        # instance, expired credentials) looked identical to every caller:
+        # "Neo4j unreachable", no way to tell which. Logs the real
+        # exception class + message (Neo4j driver errors don't echo the
+        # password back, so this is safe to log) so a caller actually
+        # knows what to fix instead of guessing.
+        import logging
+        logging.getLogger(__name__).error(
+            "Neo4j connection failed (%s: %s) -- check NEO4J_URI/NEO4J_USERNAME/"
+            "NEO4J_PASSWORD, that the Aura instance isn't paused, and that this "
+            "machine can reach %s.",
+            exc.__class__.__name__, exc, NEO4J_URI,
+        )
         return None
 
 

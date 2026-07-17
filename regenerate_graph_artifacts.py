@@ -2,14 +2,14 @@
 regenerate_graph_artifacts.py
 
 Regenerates the Problem-Concept Graph (PCG) and Concept-Concept Graph (CCG)
-artifacts from Aashray's curated source-target.txt, which already uses the
+artifacts from curated source-target.txt, which already uses the
 72 canonical backend topics. Replaces the old AI-enriched 487-tag graph.
 
 What this replaces / why:
     The old problem_topic_edges_normalized.json was built from AI-enriched
     tags that produced ~487 distinct topics -- far more granular than the
     backend's taxonomy and causing BKT/HLR to update topics the backend
-    table doesn't even have columns for. source-target.txt is Aashray's
+    table doesn't even have columns for. source-target.txt is 
     hand-curated mapping using exactly the 72 canonical tags the backend
     uses. This script uses it as the single source of truth.
 
@@ -78,7 +78,7 @@ out_qg_tt_edges     = QG_DATA / "topic_topic_edges.json"
 def load_source_target(path: Path) -> list[dict]:
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    # Filter out entries with empty source (a few sentinel rows in Aashray's file)
+    # Filter out entries with empty source (a few sentinel rows in the file)
     return [e for e in data if e.get("source") and e.get("target")]
 
 
@@ -298,7 +298,7 @@ def main(source_target: Path, manifest_path: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source",   default=str(DEFAULT_SOURCE_TARGET),
-                        help="Path to source-target.txt (Aashray's curated mapping)")
+                        help="Path to source-target.txt ( curated mapping)")
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST),
                         help="Path to 1000_manifest_final.json")
     args = parser.parse_args()

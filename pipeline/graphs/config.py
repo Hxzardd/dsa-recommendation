@@ -148,7 +148,7 @@ QDRANT_COLLECTION_SOLUTION  = os.getenv("QDRANT_COLLECTION_SOLUTION", "problems_
 # Where the curated concept edges come from (on top of the tag edges that
 # always exist from the problem payload/columns):
 #   "tags"       -> none; concepts/edges from tags only (self-contained default).
-#   "normalized" -> Aashray's curated JSON files (problem_topic / topic_topic).
+#   "normalized" -> curated JSON files (problem_topic / topic_topic).
 #   "neo4j"      -> the same curated edges, read live from the graph DB.
 # ("parquet" is accepted as an alias for "tags" for back-compat.)
 GRAPH_SOURCE = os.getenv("RGCN_GRAPH_SOURCE", "tags")

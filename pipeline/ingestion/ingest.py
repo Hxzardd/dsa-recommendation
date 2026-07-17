@@ -38,7 +38,7 @@ from tag_inference import (
 
 
 # ---------------------------------------------------------------------------
-# Canonical topic map -- built once at module load from Aashray's
+# Canonical topic map -- built once at module load from 
 # source-target.txt. Maps title_slug -> [canonical_tag, ...]. If the file
 # doesn't exist yet (first run before generate_topic_edges), falls back to
 # an empty dict so ingestion still works, just with AI-inferred tags.
@@ -143,7 +143,7 @@ def transform_record(record: Dict[str, Any]) -> Dict[str, Any]:
     out["skill_tags"]          = infer_skill_tags(record)
 
     # FIX (Darsheel/Greptile): Replace AI-inferred topic_tags with canonical
-    # tags from Aashray's source-target.txt. The AI inference produced ~487
+    # tags from source-target.txt. The AI inference produced ~487
     # implementation-level tags that don't match the backend schema's 72
     # canonical topics. _CANONICAL_TOPIC_MAP is built once at module load
     # and maps title_slug -> [canonical_tag, ...]. If the problem has no

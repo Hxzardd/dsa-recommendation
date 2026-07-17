@@ -1,0 +1,747 @@
+{
+  "version": "2.0",
+  "strategy": "Official LeetCode topic tags normalized into a curated hierarchical flat vocabulary, merged with existing topic_tags, with selected high-confidence specializations and curated fallbacks.",
+  "canonical_tag_count": 70,
+  "canonical_tags": [
+    "array",
+    "string",
+    "matrix",
+    "hash_map",
+    "linked_list",
+    "stack",
+    "queue",
+    "heap",
+    "tree",
+    "binary_tree",
+    "binary_search_tree",
+    "trie",
+    "graph",
+    "union_find",
+    "segment_tree",
+    "fenwick_tree",
+    "range_query",
+    "ordered_set",
+    "database",
+    "design",
+    "concurrency",
+    "data_stream",
+    "shell",
+    "math",
+    "number_theory",
+    "combinatorics",
+    "geometry",
+    "probability",
+    "bit_manipulation",
+    "bitmask",
+    "sorting",
+    "binary_search",
+    "two_pointers",
+    "sliding_window",
+    "prefix_sum",
+    "prefix_xor",
+    "greedy",
+    "simulation",
+    "enumeration",
+    "counting",
+    "recursion",
+    "backtracking",
+    "divide_and_conquer",
+    "dynamic_programming",
+    "bitmask_dp",
+    "digit_dp",
+    "knapsack_dp",
+    "interval_dp",
+    "sequence_dp",
+    "state_machine_dp",
+    "tree_dp",
+    "dfs",
+    "bfs",
+    "connected_components",
+    "shortest_path",
+    "dijkstra",
+    "floyd_warshall",
+    "topological_sort",
+    "minimum_spanning_tree",
+    "monotonic_stack",
+    "monotonic_queue",
+    "fast_slow_pointers",
+    "in_place_modification",
+    "merge_intervals",
+    "kadane",
+    "string_matching",
+    "kmp",
+    "rolling_hash",
+    "randomized",
+    "game_theory"
+  ],
+  "maximum_tags_per_problem": 8,
+  "official_leetcode_tag_map": {
+    "array": [
+      "array"
+    ],
+    "string": [
+      "string"
+    ],
+    "hash-table": [
+      "hash_map"
+    ],
+    "dynamic-programming": [
+      "dynamic_programming"
+    ],
+    "math": [
+      "math"
+    ],
+    "sorting": [
+      "sorting"
+    ],
+    "greedy": [
+      "greedy"
+    ],
+    "binary-search": [
+      "binary_search"
+    ],
+    "depth-first-search": [
+      "dfs"
+    ],
+    "bit-manipulation": [
+      "bit_manipulation"
+    ],
+    "matrix": [
+      "matrix",
+      "array"
+    ],
+    "prefix-sum": [
+      "prefix_sum",
+      "array"
+    ],
+    "breadth-first-search": [
+      "bfs"
+    ],
+    "two-pointers": [
+      "two_pointers"
+    ],
+    "tree": [
+      "tree"
+    ],
+    "simulation": [
+      "simulation"
+    ],
+    "heap-priority-queue": [
+      "heap"
+    ],
+    "counting": [
+      "counting"
+    ],
+    "stack": [
+      "stack"
+    ],
+    "graph": [
+      "graph"
+    ],
+    "sliding-window": [
+      "sliding_window"
+    ],
+    "binary-tree": [
+      "binary_tree",
+      "tree"
+    ],
+    "enumeration": [
+      "enumeration"
+    ],
+    "design": [
+      "design"
+    ],
+    "database": [
+      "database"
+    ],
+    "backtracking": [
+      "backtracking"
+    ],
+    "number-theory": [
+      "number_theory",
+      "math"
+    ],
+    "union-find": [
+      "union_find",
+      "connected_components",
+      "graph"
+    ],
+    "linked-list": [
+      "linked_list"
+    ],
+    "ordered-set": [
+      "ordered_set"
+    ],
+    "segment-tree": [
+      "segment_tree",
+      "range_query"
+    ],
+    "monotonic-stack": [
+      "monotonic_stack",
+      "stack"
+    ],
+    "combinatorics": [
+      "combinatorics",
+      "math"
+    ],
+    "bitmask": [
+      "bitmask",
+      "bit_manipulation"
+    ],
+    "divide-and-conquer": [
+      "divide_and_conquer"
+    ],
+    "trie": [
+      "trie",
+      "string"
+    ],
+    "memoization": [
+      "dynamic_programming"
+    ],
+    "recursion": [
+      "recursion"
+    ],
+    "queue": [
+      "queue"
+    ],
+    "geometry": [
+      "geometry",
+      "math"
+    ],
+    "binary-indexed-tree": [
+      "fenwick_tree",
+      "range_query"
+    ],
+    "string-matching": [
+      "string_matching",
+      "string"
+    ],
+    "hash-function": [
+      "hash_map"
+    ],
+    "binary-search-tree": [
+      "binary_search_tree",
+      "binary_tree",
+      "tree"
+    ],
+    "shortest-path": [
+      "shortest_path",
+      "graph"
+    ],
+    "topological-sort": [
+      "topological_sort",
+      "graph"
+    ],
+    "game-theory": [
+      "game_theory",
+      "dynamic_programming"
+    ],
+    "rolling-hash": [
+      "rolling_hash",
+      "string_matching",
+      "string"
+    ],
+    "monotonic-queue": [
+      "monotonic_queue",
+      "queue"
+    ],
+    "brainteaser": [
+      "math"
+    ],
+    "data-stream": [
+      "data_stream",
+      "design"
+    ],
+    "randomized": [
+      "randomized",
+      "probability"
+    ],
+    "doubly-linked-list": [
+      "linked_list"
+    ],
+    "counting-sort": [
+      "sorting",
+      "counting"
+    ],
+    "merge-sort": [
+      "sorting",
+      "divide_and_conquer"
+    ],
+    "quickselect": [
+      "sorting",
+      "divide_and_conquer"
+    ],
+    "bucket-sort": [
+      "sorting"
+    ],
+    "concurrency": [
+      "concurrency"
+    ],
+    "line-sweep": [
+      "geometry",
+      "sorting"
+    ],
+    "probability-and-statistics": [
+      "probability",
+      "math"
+    ],
+    "interactive": [
+      "design"
+    ],
+    "iterator": [
+      "design"
+    ],
+    "reservoir-sampling": [
+      "randomized",
+      "probability"
+    ],
+    "shell": [
+      "shell"
+    ],
+    "suffix-array": [
+      "string_matching",
+      "string"
+    ],
+    "eulerian-circuit": [
+      "graph",
+      "dfs"
+    ],
+    "minimum-spanning-tree": [
+      "minimum_spanning_tree",
+      "graph"
+    ],
+    "radix-sort": [
+      "sorting"
+    ],
+    "rejection-sampling": [
+      "randomized",
+      "probability"
+    ],
+    "strongly-connected-component": [
+      "connected_components",
+      "graph",
+      "dfs"
+    ],
+    "biconnected-component": [
+      "connected_components",
+      "graph",
+      "dfs"
+    ],
+    "sort": [
+      "sorting"
+    ]
+  },
+  "legacy_and_ai_taxonomy_map": {
+    "array": [
+      "array"
+    ],
+    "arrays": [
+      "array"
+    ],
+    "string": [
+      "string"
+    ],
+    "strings": [
+      "string"
+    ],
+    "matrix": [
+      "matrix",
+      "array"
+    ],
+    "matrices": [
+      "matrix",
+      "array"
+    ],
+    "hash_map": [
+      "hash_map"
+    ],
+    "hash_maps": [
+      "hash_map"
+    ],
+    "hashing": [
+      "hash_map"
+    ],
+    "hash_table": [
+      "hash_map"
+    ],
+    "hash_tables": [
+      "hash_map"
+    ],
+    "linked_list": [
+      "linked_list"
+    ],
+    "linked_lists": [
+      "linked_list"
+    ],
+    "stack": [
+      "stack"
+    ],
+    "stacks": [
+      "stack"
+    ],
+    "queue": [
+      "queue"
+    ],
+    "heap": [
+      "heap"
+    ],
+    "priority_queue": [
+      "heap"
+    ],
+    "tree": [
+      "tree"
+    ],
+    "trees": [
+      "tree"
+    ],
+    "binary_tree": [
+      "binary_tree",
+      "tree"
+    ],
+    "binary_trees": [
+      "binary_tree",
+      "tree"
+    ],
+    "binary_search_tree": [
+      "binary_search_tree",
+      "binary_tree",
+      "tree"
+    ],
+    "trie": [
+      "trie",
+      "string"
+    ],
+    "graph": [
+      "graph"
+    ],
+    "graphs": [
+      "graph"
+    ],
+    "union_find": [
+      "union_find",
+      "connected_components",
+      "graph"
+    ],
+    "segment_tree": [
+      "segment_tree",
+      "range_query"
+    ],
+    "binary_indexed_tree": [
+      "fenwick_tree",
+      "range_query"
+    ],
+    "fenwick_tree": [
+      "fenwick_tree",
+      "range_query"
+    ],
+    "ordered_set": [
+      "ordered_set"
+    ],
+    "database": [
+      "database"
+    ],
+    "design": [
+      "design"
+    ],
+    "concurrency": [
+      "concurrency"
+    ],
+    "data_stream": [
+      "data_stream",
+      "design"
+    ],
+    "shell": [
+      "shell"
+    ],
+    "math": [
+      "math"
+    ],
+    "number_theory": [
+      "number_theory",
+      "math"
+    ],
+    "combinatorics": [
+      "combinatorics",
+      "math"
+    ],
+    "geometry": [
+      "geometry",
+      "math"
+    ],
+    "probability": [
+      "probability"
+    ],
+    "bitwise": [
+      "bit_manipulation"
+    ],
+    "bit_manipulation": [
+      "bit_manipulation"
+    ],
+    "bitmask": [
+      "bitmask",
+      "bit_manipulation"
+    ],
+    "sorting": [
+      "sorting"
+    ],
+    "binary_search": [
+      "binary_search"
+    ],
+    "binary_search_answer": [
+      "binary_search"
+    ],
+    "two_pointers": [
+      "two_pointers"
+    ],
+    "sliding_window": [
+      "sliding_window"
+    ],
+    "prefix_sum": [
+      "prefix_sum",
+      "array"
+    ],
+    "prefix_xor": [
+      "prefix_xor",
+      "bit_manipulation",
+      "array"
+    ],
+    "greedy": [
+      "greedy"
+    ],
+    "greedy_choice": [
+      "greedy"
+    ],
+    "simulation": [
+      "simulation"
+    ],
+    "enumeration": [
+      "enumeration"
+    ],
+    "counting": [
+      "counting"
+    ],
+    "hash_map_counting": [
+      "hash_map",
+      "counting"
+    ],
+    "hash_set_lookup": [
+      "hash_map"
+    ],
+    "recursion": [
+      "recursion"
+    ],
+    "recursive_call": [
+      "recursion"
+    ],
+    "backtracking": [
+      "backtracking"
+    ],
+    "divide_and_conquer": [
+      "divide_and_conquer"
+    ],
+    "dp": [
+      "dynamic_programming"
+    ],
+    "dynamic_programming": [
+      "dynamic_programming"
+    ],
+    "memoization": [
+      "dynamic_programming"
+    ],
+    "tabulation": [
+      "dynamic_programming"
+    ],
+    "bitmask_dp": [
+      "bitmask_dp",
+      "dynamic_programming",
+      "bitmask"
+    ],
+    "digit_dp": [
+      "digit_dp",
+      "dynamic_programming"
+    ],
+    "knapsack_dp": [
+      "knapsack_dp",
+      "dynamic_programming"
+    ],
+    "interval_dp": [
+      "interval_dp",
+      "dynamic_programming"
+    ],
+    "sequence_dp": [
+      "sequence_dp",
+      "dynamic_programming"
+    ],
+    "state_machine_dp": [
+      "state_machine_dp",
+      "dynamic_programming"
+    ],
+    "tree_dp": [
+      "tree_dp",
+      "dynamic_programming",
+      "tree"
+    ],
+    "dfs": [
+      "dfs"
+    ],
+    "depth_first_search": [
+      "dfs"
+    ],
+    "bfs": [
+      "bfs"
+    ],
+    "breadth_first_search": [
+      "bfs"
+    ],
+    "connected_components": [
+      "connected_components",
+      "graph"
+    ],
+    "shortest_path": [
+      "shortest_path",
+      "graph"
+    ],
+    "dijkstra": [
+      "dijkstra",
+      "shortest_path",
+      "graph"
+    ],
+    "dijkstra_algorithm": [
+      "dijkstra",
+      "shortest_path",
+      "graph"
+    ],
+    "floyd_warshall": [
+      "floyd_warshall",
+      "shortest_path",
+      "graph"
+    ],
+    "topological_order": [
+      "topological_sort",
+      "graph"
+    ],
+    "topological_sort": [
+      "topological_sort",
+      "graph"
+    ],
+    "kahn_algorithm": [
+      "topological_sort",
+      "graph"
+    ],
+    "minimum_spanning_tree": [
+      "minimum_spanning_tree",
+      "graph"
+    ],
+    "kruskal": [
+      "minimum_spanning_tree",
+      "graph"
+    ],
+    "kruskal_algorithm": [
+      "minimum_spanning_tree",
+      "graph"
+    ],
+    "monotonic_stack": [
+      "monotonic_stack",
+      "stack"
+    ],
+    "monotonic_queue": [
+      "monotonic_queue",
+      "queue"
+    ],
+    "fast_slow_pointers": [
+      "fast_slow_pointers"
+    ],
+    "fast_and_slow_pointers": [
+      "fast_slow_pointers"
+    ],
+    "floyd_cycle_detection": [
+      "fast_slow_pointers"
+    ],
+    "in_place_modification": [
+      "in_place_modification"
+    ],
+    "in_place_reversal": [
+      "in_place_modification"
+    ],
+    "merge_intervals": [
+      "merge_intervals",
+      "sorting",
+      "array"
+    ],
+    "kadane": [
+      "kadane",
+      "array"
+    ],
+    "kadanes": [
+      "kadane",
+      "array"
+    ],
+    "string_matching": [
+      "string_matching",
+      "string"
+    ],
+    "kmp": [
+      "kmp",
+      "string_matching",
+      "string"
+    ],
+    "kmp_algorithm": [
+      "kmp",
+      "string_matching",
+      "string"
+    ],
+    "rolling_hash": [
+      "rolling_hash",
+      "string_matching",
+      "string"
+    ],
+    "randomized": [
+      "randomized",
+      "probability"
+    ],
+    "game_theory": [
+      "game_theory",
+      "dynamic_programming"
+    ],
+    "counting_sort": [
+      "sorting",
+      "counting"
+    ],
+    "merge_sort": [
+      "sorting",
+      "divide_and_conquer"
+    ],
+    "cyclic_sort": [
+      "sorting"
+    ],
+    "top_k_elements": [
+      "heap"
+    ],
+    "two_heaps": [
+      "heap"
+    ],
+    "iterative_stack": [
+      "stack"
+    ],
+    "dummy_node": [
+      "linked_list"
+    ],
+    "tree_traversal": [
+      "tree"
+    ],
+    "square_root_decomposition": [
+      "range_query"
+    ],
+    "subsets": [
+      "backtracking",
+      "combinatorics"
+    ]
+  },
+  "notes": [
+    "Lexical aliases collapse to one canonical spelling.",
+    "Parent and child tags may coexist, for example dynamic_programming and digit_dp.",
+    "Generic implementation aliases such as tabulation and memoization collapse to dynamic_programming.",
+    "Sorting variants collapse to sorting; heap variants collapse to heap.",
+    "The original dataset is not modified."
+  ]
+}

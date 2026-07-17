@@ -6,6 +6,7 @@ from pipeline.recommender.bkt import (
     MASTERY_THRESHOLD, DEFAULT_P_L,
 )
 from database.postgres.db import get_connection, release_connection, save_user_hlr, save_user_mastery
+from database.postgres.topic_taxonomy import canonical_tags_for_leetcode_slug
 from psycopg2.extras import RealDictCursor
 
 def user_exists(user_id: str) -> bool:
@@ -173,24 +174,74 @@ def get_user_lc_handle(user_id: str):
         release_connection(conn)
 
 
-def get_lc_submissions(lc_handle: str):
-    """Raises ProviderError on an actual fetch failure -- same fix as get_cf_submissions."""
+def _fetch_question_topic_tags(title_slug: str) -> list[str]:
+    """
+    LeetCode's own tag slugs (e.g. "hash-table") for one problem, translated
+    to our canonical ML tags via topic_taxonomy.canonical_tags_for_leetcode_slug
+    (e.g. ["hash_map"]). Best-effort: any fetch/parse failure returns []
+    rather than raising -- one problem's tags being unavailable shouldn't
+    abort the whole history import, unlike get_lc_submissions' own errors.
+    """
+    query = """
+    query questionTopicTags($titleSlug: String!) {
+      question(titleSlug: $titleSlug) {
+        topicTags { slug }
+      }
+    }
+    """
     try:
-        query = """
-        {
-          recentSubmissionList(username: "%s", limit: 100) {
-            title
-            statusDisplay
-            timestamp
-            topicTags {
-              slug
-            }
-          }
-        }
-        """ % lc_handle
         response = requests.post(
             "https://leetcode.com/graphql",
-            json={"query": query},
+            json={"query": query, "variables": {"titleSlug": title_slug}},
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return []
+    if "errors" in data:
+        return []
+    question = (data.get("data") or {}).get("question") or {}
+    lc_slugs = [t["slug"] for t in question.get("topicTags", []) if t.get("slug")]
+
+    canonical: list[str] = []
+    for lc_slug in lc_slugs:
+        for tag in canonical_tags_for_leetcode_slug(lc_slug):
+            if tag not in canonical:
+                canonical.append(tag)
+    return canonical
+
+
+def get_lc_submissions(lc_handle: str):
+    """
+    Raises ProviderError on an actual fetch failure -- same fix as get_cf_submissions.
+
+    FIX (backend review "seed_bkt topicTags:[] bug"): LeetCode's
+    recentSubmissionList does NOT return topicTags -- confirmed against
+    their live GraphQL API (the field is silently empty, not an error).
+    Tags only come back from the question(titleSlug) query. Fetches them
+    with a second round-trip per UNIQUE problem (not per submission -- the
+    same problem can appear many times in a user's history) and attaches
+    them under the same "topicTags": [{"slug": ...}] shape the original
+    (broken) inline query claimed to return, so handle_seed_bkt's
+    downstream parsing needs no changes. Tags are translated from
+    LeetCode's own taxonomy to our canonical ML tags before attaching --
+    see _fetch_question_topic_tags.
+    """
+    try:
+        query = """
+        query userRecentSubmissions($username: String!) {
+          recentSubmissionList(username: $username, limit: 100) {
+            title
+            titleSlug
+            statusDisplay
+            timestamp
+          }
+        }
+        """
+        response = requests.post(
+            "https://leetcode.com/graphql",
+            json={"query": query, "variables": {"username": lc_handle}},
             timeout=10
         )
         response.raise_for_status()
@@ -206,7 +257,19 @@ def get_lc_submissions(lc_handle: str):
         # legitimately empty history.
         raise ProviderError(f"LeetCode GraphQL error: {data['errors']}")
 
-    return data.get("data", {}).get("recentSubmissionList", [])
+    submissions = data.get("data", {}).get("recentSubmissionList", [])
+
+    tag_cache: dict[str, list[str]] = {}
+    for sub in submissions:
+        title_slug = sub.get("titleSlug")
+        if not title_slug:
+            sub["topicTags"] = []
+            continue
+        if title_slug not in tag_cache:
+            tag_cache[title_slug] = _fetch_question_topic_tags(title_slug)
+        sub["topicTags"] = [{"slug": tag} for tag in tag_cache[title_slug]]
+
+    return submissions
 
 
 def _apply_bkt_update(current_mastery: dict, topics: list, verdict: str,
