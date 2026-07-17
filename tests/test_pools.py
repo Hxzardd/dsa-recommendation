@@ -289,8 +289,8 @@ class TestColdStartFallback(unittest.TestCase):
 
     def test_course_path_returns_candidates_for_totally_cold_user(self):
         problems = [
-            _Pt("arrays_0", ["arrays"], 0.2),
-            _Pt("strings_0", ["strings"], 0.2),
+            _Pt("array_0", ["array"], 0.2),
+            _Pt("string_0", ["string"], 0.2),
         ]
         pool = CoursePathPool(qdrant=FakeQdrant(problems))
         graph = _graph()   # zero concepts, zero cc_edges, zero solved
@@ -301,8 +301,8 @@ class TestColdStartFallback(unittest.TestCase):
 
     def test_novelty_returns_candidates_for_totally_cold_user(self):
         problems = [
-            _Pt("arrays_0", ["arrays"], 0.2),
-            _Pt("strings_0", ["strings"], 0.2),
+            _Pt("array_0", ["array"], 0.2),
+            _Pt("string_0", ["string"], 0.2),
         ]
         pool = NoveltyPool(qdrant=FakeQdrant(problems))
         graph = _graph()

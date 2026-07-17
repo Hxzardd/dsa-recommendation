@@ -4,6 +4,8 @@ import os
 from collections import defaultdict
 from datetime import datetime, timezone
 
+from pipeline.recommender.telemetry import compute_telemetry_signal_from_submission
+
 # Load problem to topics mapping. Absolute path so this works regardless of
 # the working directory the process is launched from. Falls back to an empty
 # mapping (with a warning) instead of crashing at import time if the file is
@@ -17,7 +19,7 @@ except FileNotFoundError:
     print(f"[!] {_pt_edges_path} not found -- hlr.py starting with an EMPTY "
           f"problem->topic mapping.")
     pt_edges = []
-    
+
 problem_to_topics = defaultdict(list)
 for edge in pt_edges:
     problem_to_topics[edge["source"]].append(edge["target"])
@@ -38,7 +40,8 @@ def _parse_aware(iso_str):
     subtracting it from a UTC-aware "now" raises:
         TypeError: can't subtract offset-naive and offset-aware datetimes
     This wrapper normalises naive timestamps to UTC so every caller in
-    this module can safely subtract two datetimes without checking first.
+    this module (and controllers/mastery_controller.py's proficiency
+    calculation) can safely subtract two datetimes without checking first.
     """
     dt = datetime.fromisoformat(iso_str)
     if dt.tzinfo is None:
@@ -84,19 +87,6 @@ def seed_half_life_from_cf(cf_submissions, problem_to_topics):
         half_lives[topic] = round(half_life, 3)
 
     return half_lives
-
-def calculate_performance(verdict, hints_taken, submission_count, normalised_score):
-    """
-    Returns performance score between 0.0 and 1.0.
-    """
-    if verdict == "OK":
-        hint_factor = max(0.4, 1 - (hints_taken / 10))
-        attempt_factor = max(0.5, 1 - ((submission_count - 1) / 10))
-        performance = normalised_score * hint_factor * attempt_factor
-    else:
-        performance = max(0.0, normalised_score) * 0.3
-
-    return round(min(1.0, max(0.0, performance)), 4)
 
 def recall_probability(half_life, days_since_review):
     """
@@ -186,12 +176,13 @@ def process_hlr(submission, user_hlr_state):
     if not topics:
         return user_hlr_state, []
 
-    performance = calculate_performance(
-        verdict=submission["verdict"],
-        hints_taken=submission.get("hintsUsed", 0),
-        submission_count=submission.get("submissionCount", 1),
-        normalised_score=submission.get("normalisedScore", 0.0)
-    )
+    # Shared telemetry signal (also consumed by bkt.py::process_submission
+    # for the same submission) -- see telemetry.py for the confidence-
+    # penalty logic. Previously this module computed its own divergent
+    # "performance" score (calculate_performance) from the same telemetry
+    # bkt.py used for "observed" -- two different opinions of how well the
+    # learner did on the exact same submission. Both now agree.
+    performance = compute_telemetry_signal_from_submission(submission).value
 
     current_time = submission.get(
         "timestamp",

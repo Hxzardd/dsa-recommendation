@@ -1,0 +1,14 @@
+{
+  "userId": "postman_demo_user",
+  "problemId": "valid-anagram",
+  "verdict": "OK",
+  "hintsUsed": 0,
+  "testCasesPassed": 10,
+  "totalTestCases": 10,
+  "submissionCount": 1,
+  "normalisedScore": 0.9,
+  "problemDifficulty": 0.3,
+  "problemTopics": [
+    { "topicId": "hash_map", "currentMastery": 0.75, "currentHlr": null }
+  ]
+}

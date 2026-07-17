@@ -1,0 +1,5 @@
+$kind: http-request
+description: Raw BKT mastery per topic, mastered_topics list, and proficiency (mastery decayed by HLR retention -- 'how good are they RIGHT NOW', not just historically). No auth needed.
+url: "{{base_url}}/mastery/{{user_id}}"
+method: GET
+order: 4000

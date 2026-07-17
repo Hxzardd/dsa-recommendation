@@ -1,0 +1,33 @@
+$kind: http-request
+description: First-ever submission for these topics (currentMastery=null -> DEFAULT_P_L branch=0.15). Topics actually updated come from the static problem_to_topics mapping keyed by problemId (data/problem_topic_edges_normalized.json), NOT from problemTopics in the body, at this commit -- so 'two-sum' may touch more/different topics than listed here. Expect mastery to move from 0.15 to ~0.23 (+0.08), the capped MAX_MASTERY_DELTA scaled down for an easy (difficulty=0.15) problem -- NOT the ~0.54 jump the uncapped Bayesian formula would have produced.
+url: "{{base_url}}/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "userId": "postman_demo_user",
+      "problemId": "two-sum",
+      "verdict": "OK",
+      "hintsUsed": 0,
+      "testCasesPassed": 10,
+      "totalTestCases": 10,
+      "submissionCount": 1,
+      "normalisedScore": 0.95,
+      "problemDifficulty": 0.15,
+      "problemTopics": [
+        {
+          "topicId": "array",
+          "currentMastery": null,
+          "currentHlr": null
+        },
+        {
+          "topicId": "hash_map",
+          "currentMastery": null,
+          "currentHlr": null
+        }
+      ]
+    }
+order: 1000

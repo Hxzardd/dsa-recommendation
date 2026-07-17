@@ -19,7 +19,7 @@ from pipeline.recommender.models.user_graph import (
 )
 from pipeline.recommender.services.adaptive_difficulty import (
     AdaptiveDifficultyController, build_difficulty_plan,
-    POOLS, LOW_MASTERY, HIGH_MASTERY,
+    POOLS, LOW_MASTERY, MIX_BEGINNER,
 )
 
 
@@ -208,6 +208,61 @@ class TestColdStart(unittest.TestCase):
         g = _graph([_concept("arrays", mastery=0.5)], solved=None)
         plan = build_difficulty_plan(g, now=NOW)
         self.assertTrue(plan.is_cold_start)
+
+    def test_true_cold_start_mix_is_extremely_easy_weighted(self):
+        """A user's very first-ever recommendations should require
+        extremely low difficulty -- more so than the general beginner mix."""
+        g = _graph()
+        plan = build_difficulty_plan(g, now=NOW)
+        mix = plan.mix_of("A")
+        self.assertGreaterEqual(mix["easy"], 0.8)
+        self.assertEqual(mix["hard"], 0.0)
+        self.assertGreater(mix["easy"], MIX_BEGINNER[0])
+
+    def test_second_and_third_question_ease_gradually_not_a_sudden_jump(self):
+        """
+        Regression test: _base_mix() used to be a flat plateau at
+        MIX_BEGINNER (30% medium / 10% hard) across the ENTIRE
+        0..LOW_MASTERY range, so the moment is_cold_start flipped False
+        (right after the user's first solve), question 2 got the SAME
+        medium/hard exposure as an almost-established 0.34-mastery
+        beginner -- a sudden jump, not a gradual ramp. The mix should now
+        ease in smoothly: each successive low-mastery step's medium share
+        should be small and only gradually increasing, never jumping
+        straight to a large fraction.
+        """
+        g_q1 = _graph()   # true cold start
+        plan_q1 = build_difficulty_plan(g_q1, now=NOW)
+        mix_q1 = plan_q1.mix_of("A")
+
+        # question 2: one easy solve landed, mastery still very low
+        g_q2 = _graph([_concept("arrays", mastery=0.20)], solved=["p1"])
+        plan_q2 = build_difficulty_plan(g_q2, now=NOW)
+        mix_q2 = plan_q2.mix_of("A")
+
+        # question 3: mastery a little higher still
+        g_q3 = _graph([_concept("arrays", mastery=0.27)], solved=["p1", "p2"])
+        plan_q3 = build_difficulty_plan(g_q3, now=NOW)
+        mix_q3 = plan_q3.mix_of("A")
+
+        # monotonic, gradual easing -- easy share decreases step by step,
+        # never cliffs down to MIX_BEGINNER's fixed 60% in one jump
+        self.assertGreater(mix_q1["easy"], mix_q2["easy"])
+        self.assertGreater(mix_q2["easy"], mix_q3["easy"])
+        # medium share stays small and climbs gradually, not a jump to 30%
+        self.assertLess(mix_q2["medium"], 0.30)
+        self.assertLess(mix_q3["medium"], 0.30)
+        # no hard problems at all this early
+        self.assertLess(mix_q2["hard"], 0.10)
+        self.assertLess(mix_q3["hard"], 0.15)
+
+    def test_base_mix_reproduces_beginner_exactly_at_low_mastery_boundary(self):
+        """At avg_mastery==LOW_MASTERY exactly, the three-segment
+        interpolation should hand off cleanly to MIX_BEGINNER."""
+        ctrl = AdaptiveDifficultyController()
+        mix = ctrl._base_mix(LOW_MASTERY)
+        for i in range(3):
+            self.assertAlmostEqual(mix[i], MIX_BEGINNER[i], places=6)
 
 
 class TestSerialization(unittest.TestCase):

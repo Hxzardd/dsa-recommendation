@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from pipeline.recommender.models.user_graph import UserGraph, EdgeType
+from pipeline.recommender.models.user_graph import UserGraph
 
 
 # Pools this controller assigns weights to. Matches the pool generation layer.
@@ -42,9 +42,17 @@ SEVERITY_WEAK_THRESHOLD = 0.6
 
 # Difficulty mix presets by user level. Each is (easy, medium, hard) and sums
 # to 1.0. The controller interpolates and adjusts these per pool.
-MIX_BEGINNER = (0.60, 0.30, 0.10)
-MIX_MID      = (0.30, 0.45, 0.25)
 MIX_ADVANCED = (0.15, 0.40, 0.45)
+MIX_BEGINNER = (0.60, 0.30, 0.10)
+
+# A user's very first-ever recommendations (avg_mastery == 0.0 -- either a
+# genuinely cold-start user, or a topic whose mastery hasn't started
+# accumulating yet) get an EXTRA gentle mix, not just MIX_BEGINNER.
+# MIX_BEGINNER's 30% medium / 10% hard is too much to lead with when there
+# is zero evidence the user can handle anything past "easy" yet. See
+# _base_mix()'s three-segment interpolation for how this eases into
+# MIX_BEGINNER as avg_mastery climbs, rather than a hard cutover.
+MIX_COLD_START = (0.85, 0.15, 0.0)
 
 
 @dataclass
@@ -213,12 +221,32 @@ class AdaptiveDifficultyController:
     # ------------------------------------------------------------- mixes
 
     def _base_mix(self, avg_mastery: float) -> tuple:
-        """Interpolate a global easy/med/hard mix from average mastery."""
+        """
+        Interpolate a global easy/med/hard mix from average mastery, in
+        THREE continuous segments: MIX_COLD_START (avg_mastery=0) ->
+        MIX_BEGINNER (avg_mastery=LOW_MASTERY) -> MIX_ADVANCED
+        (avg_mastery=HIGH_MASTERY).
+
+        A flat plateau at MIX_BEGINNER across the ENTIRE 0..LOW_MASTERY
+        range (the old behavior) meant a user's 2nd-3rd recommendation --
+        right after cold start ends, avg_mastery still very low (e.g.
+        ~0.2 after one easy solve) -- got the IDENTICAL 30% medium / 10%
+        hard exposure as an almost-established beginner at avg_mastery
+        0.34. That reads as a sudden jump to medium, not a gradual ramp.
+        Interpolating continuously from MIX_COLD_START removes that cliff:
+        the easy share now eases down smoothly question by question as
+        avg_mastery climbs, instead of jumping the moment is_cold_start
+        flips False.
+        """
+        if avg_mastery <= 0.0:
+            return MIX_COLD_START
         if avg_mastery < LOW_MASTERY:
-            return MIX_BEGINNER
+            t = avg_mastery / LOW_MASTERY
+            lo, hi = MIX_COLD_START, MIX_BEGINNER
+            return tuple(lo[i] + (hi[i] - lo[i]) * t for i in range(3))
         if avg_mastery > HIGH_MASTERY:
             return MIX_ADVANCED
-        # linear interpolate between MID endpoints across the mid band
+        # linear interpolate between beginner/advanced endpoints across the mid band
         span = HIGH_MASTERY - LOW_MASTERY
         t = (avg_mastery - LOW_MASTERY) / span if span > 0 else 0.5
         lo, hi = MIX_BEGINNER, MIX_ADVANCED

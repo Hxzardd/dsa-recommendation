@@ -144,6 +144,19 @@ class PoolGenerationOrchestrator:
         filtering = CandidateFilteringLayer(graph)
         merged, report = filtering.run(pool_candidates)
 
+        # Graceful degradation: the strict ZPD band can legitimately empty
+        # out every candidate for a real user (not just a hypothetical
+        # edge case) -- e.g. real-but-still-low mastery recommended against
+        # a catalog whose difficulty floor sits above what the ZPD band
+        # tolerates for that mastery level. Retrying with apply_zpd=False
+        # falls back to the pre-ZPD, still solved/locked/duplicate-filtered
+        # candidates rather than surfacing zero recommendations. Only
+        # engages when the raw pool candidates were non-empty but the ZPD
+        # pass alone wiped them out -- a genuinely cold user with zero raw
+        # candidates gets an (already correct) empty result either way.
+        if not merged and any(pool_candidates.values()):
+            merged, report = filtering.run(pool_candidates, apply_zpd=False)
+
         return PoolGenerationResult(
             merged_candidates=merged,
             filter_report=report,

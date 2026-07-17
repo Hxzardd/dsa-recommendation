@@ -1,0 +1,28 @@
+$kind: http-request
+description: Topic is already well-mastered (0.75). Even a clean solve only nudges it up slightly -- the mastery-proximity dampening in bkt.py's update_bkt shrinking returns as mastery approaches 1.0.
+url: "{{base_url}}/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "userId": "postman_demo_user",
+      "problemId": "valid-anagram",
+      "verdict": "OK",
+      "hintsUsed": 0,
+      "testCasesPassed": 10,
+      "totalTestCases": 10,
+      "submissionCount": 1,
+      "normalisedScore": 0.9,
+      "problemDifficulty": 0.3,
+      "problemTopics": [
+        {
+          "topicId": "hash_map",
+          "currentMastery": 0.75,
+          "currentHlr": null
+        }
+      ]
+    }
+order: 5000

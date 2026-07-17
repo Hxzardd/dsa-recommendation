@@ -1,0 +1,14 @@
+{
+  "userId": "postman_demo_user",
+  "problemId": "two-sum",
+  "verdict": "OK",
+  "hintsUsed": 0,
+  "testCasesPassed": 10,
+  "totalTestCases": 10,
+  "submissionCount": 1,
+  "normalisedScore": 1.0,
+  "problemDifficulty": 0.05,
+  "problemTopics": [
+    { "topicId": "hash_map", "currentMastery": 0.85, "currentHlr": null }
+  ]
+}

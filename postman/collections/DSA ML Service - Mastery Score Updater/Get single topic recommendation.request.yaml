@@ -1,0 +1,5 @@
+$kind: http-request
+description: 'Single best-next-topic for this user (not a problem list) -- priority: due-for-review > in-progress topic closest to mastery > newly-unlocked topic > novel topic reachable from a mastered concept > cold-start fallback. Pure UserGraph logic, no Qdrant needed. Response: {"userId", "topicId", "reason"}.'
+url: "{{base_url}}/topic/recommend/{{user_id}}"
+method: GET
+order: 7000

@@ -1,0 +1,8 @@
+name: DSA ML Service - Local
+values:
+  - key: base_url
+    value: 'http://localhost:8000'
+  - key: user_id
+    value: postman_demo_user
+  - key: auth_token
+    value: QxDPDGtbjUDd1BmETPPE7Jz1RlOxGm1JiHVEf1_i1vY

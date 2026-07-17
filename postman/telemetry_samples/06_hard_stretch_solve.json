@@ -1,0 +1,15 @@
+{
+  "userId": "postman_demo_user",
+  "problemId": "median-of-two-sorted-arrays",
+  "verdict": "OK",
+  "hintsUsed": 1,
+  "testCasesPassed": 10,
+  "totalTestCases": 10,
+  "submissionCount": 2,
+  "normalisedScore": 0.85,
+  "problemDifficulty": 0.95,
+  "problemTopics": [
+    { "topicId": "binary_search_answer", "currentMastery": 0.4, "currentHlr": null },
+    { "topicId": "array", "currentMastery": null, "currentHlr": null }
+  ]
+}

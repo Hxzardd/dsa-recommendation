@@ -1,0 +1,15 @@
+$kind: http-request
+description: "Backend already knows which topic it wants (topicId) -- returns problems FOR THAT TOPIC ranked by relevance to the user's own level (their current BKT mastery on this exact topic vs each candidate's real Qdrant difficulty_score), not a fixed difficulty band. A 0.25-mastery user and a 0.75-mastery user asking for the same topicId get genuinely different, level-appropriate problems. Respects prereq gating (graph.is_locked) and never re-serves solved problems. Response: {\"userId\", \"topicId\", \"recommendations\": [{problem_id, title, title_slug, difficulty_score, topic_tags, predicted_success}]}."
+url: "{{base_url}}/topic/recommend/problems"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "userId": "postman_demo_user",
+      "topicId": "array",
+      "limit": 10
+    }
+order: 8000

@@ -1,0 +1,7 @@
+$kind: http-request
+description: Requires the user row to have linked_leetcode set (use seed_test_session.py --lc).
+url: "{{base_url}}/seed_bkt/{{user_id}}"
+method: POST
+headers:
+  X-User-Id: "{{user_id}}"
+order: 2000

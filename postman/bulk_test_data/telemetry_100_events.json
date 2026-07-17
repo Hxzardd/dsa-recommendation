@@ -1,0 +1,2002 @@
+[
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 3,
+    "normalisedScore": 0.826,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.069,
+        "currentHlr": {
+          "half_life": 0.981
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 1,
+    "normalisedScore": 0.975,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.081,
+        "currentHlr": {
+          "half_life": 1.317
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "counting-bits",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 2,
+    "testCasesPassed": 21,
+    "totalTestCases": 33,
+    "submissionCount": 3,
+    "normalisedScore": 0.405,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.06,
+        "currentHlr": {
+          "half_life": 1.25
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 3,
+    "normalisedScore": 0.783,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.29,
+        "currentHlr": {
+          "half_life": 1.329
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "flood-fill",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 2,
+    "testCasesPassed": 51,
+    "totalTestCases": 88,
+    "submissionCount": 3,
+    "normalisedScore": 0.341,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.068,
+        "currentHlr": {
+          "half_life": 1.05
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "matrix-block-sum",
+    "verdict": "TIME_LIMIT_EXCEEDED",
+    "hintsUsed": 2,
+    "testCasesPassed": 35,
+    "totalTestCases": 88,
+    "submissionCount": 4,
+    "normalisedScore": 0.224,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.193,
+        "currentHlr": {
+          "half_life": 1.271
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "RUNTIME_ERROR",
+    "hintsUsed": 3,
+    "testCasesPassed": 4,
+    "totalTestCases": 67,
+    "submissionCount": 6,
+    "normalisedScore": 0.0,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.18,
+        "currentHlr": {
+          "half_life": 1.023
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "TIME_LIMIT_EXCEEDED",
+    "hintsUsed": 2,
+    "testCasesPassed": 67,
+    "totalTestCases": 181,
+    "submissionCount": 6,
+    "normalisedScore": 0.161,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.325,
+        "currentHlr": {
+          "half_life": 1.974
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "non-decreasing-array",
+    "verdict": "TIME_LIMIT_EXCEEDED",
+    "hintsUsed": 3,
+    "testCasesPassed": 67,
+    "totalTestCases": 165,
+    "submissionCount": 5,
+    "normalisedScore": 0.191,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.419,
+        "currentHlr": {
+          "half_life": 1.748
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_01",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 3,
+    "testCasesPassed": 70,
+    "totalTestCases": 115,
+    "submissionCount": 6,
+    "normalisedScore": 0.317,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.233,
+        "currentHlr": {
+          "half_life": 1.143
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 4,
+    "normalisedScore": 0.794,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.065,
+        "currentHlr": {
+          "half_life": 1.302
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 3,
+    "normalisedScore": 0.803,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.11,
+        "currentHlr": {
+          "half_life": 1.5
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "counting-bits",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 0,
+    "testCasesPassed": 21,
+    "totalTestCases": 33,
+    "submissionCount": 3,
+    "normalisedScore": 0.451,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.109,
+        "currentHlr": {
+          "half_life": 1.223
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 2,
+    "normalisedScore": 0.87,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.281,
+        "currentHlr": {
+          "half_life": 1.725
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 3,
+    "normalisedScore": 0.781,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.142,
+        "currentHlr": {
+          "half_life": 1.559
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "matrix-block-sum",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 1,
+    "testCasesPassed": 56,
+    "totalTestCases": 88,
+    "submissionCount": 3,
+    "normalisedScore": 0.437,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.235,
+        "currentHlr": {
+          "half_life": 1.283
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "OK",
+    "hintsUsed": 3,
+    "testCasesPassed": 67,
+    "totalTestCases": 67,
+    "submissionCount": 4,
+    "normalisedScore": 0.731,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.316,
+        "currentHlr": {
+          "half_life": 2.047
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 3,
+    "testCasesPassed": 102,
+    "totalTestCases": 181,
+    "submissionCount": 5,
+    "normalisedScore": 0.267,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.31,
+        "currentHlr": {
+          "half_life": 1.999
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "non-decreasing-array",
+    "verdict": "TIME_LIMIT_EXCEEDED",
+    "hintsUsed": 3,
+    "testCasesPassed": 64,
+    "totalTestCases": 165,
+    "submissionCount": 5,
+    "normalisedScore": 0.167,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.429,
+        "currentHlr": {
+          "half_life": 2.407
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_02",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "TIME_LIMIT_EXCEEDED",
+    "hintsUsed": 3,
+    "testCasesPassed": 41,
+    "totalTestCases": 115,
+    "submissionCount": 6,
+    "normalisedScore": 0.12,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.303,
+        "currentHlr": {
+          "half_life": 1.334
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 3,
+    "normalisedScore": 0.834,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.091,
+        "currentHlr": {
+          "half_life": 1.428
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 1,
+    "normalisedScore": 0.968,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.086,
+        "currentHlr": {
+          "half_life": 1.207
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "counting-bits",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 33,
+    "totalTestCases": 33,
+    "submissionCount": 2,
+    "normalisedScore": 0.823,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.101,
+        "currentHlr": {
+          "half_life": 1.445
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 2,
+    "normalisedScore": 0.966,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.305,
+        "currentHlr": {
+          "half_life": 1.944
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 2,
+    "normalisedScore": 0.849,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.153,
+        "currentHlr": {
+          "half_life": 1.41
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "matrix-block-sum",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 3,
+    "normalisedScore": 0.786,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.304,
+        "currentHlr": {
+          "half_life": 1.953
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 2,
+    "testCasesPassed": 42,
+    "totalTestCases": 67,
+    "submissionCount": 4,
+    "normalisedScore": 0.388,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.337,
+        "currentHlr": {
+          "half_life": 1.94
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "OK",
+    "hintsUsed": 3,
+    "testCasesPassed": 181,
+    "totalTestCases": 181,
+    "submissionCount": 4,
+    "normalisedScore": 0.726,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.327,
+        "currentHlr": {
+          "half_life": 1.801
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "non-decreasing-array",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 2,
+    "testCasesPassed": 100,
+    "totalTestCases": 165,
+    "submissionCount": 5,
+    "normalisedScore": 0.349,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.464,
+        "currentHlr": {
+          "half_life": 2.896
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_03",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 3,
+    "testCasesPassed": 69,
+    "totalTestCases": 115,
+    "submissionCount": 5,
+    "normalisedScore": 0.319,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.417,
+        "currentHlr": {
+          "half_life": 2.574
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 1,
+    "normalisedScore": 0.979,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.122,
+        "currentHlr": {
+          "half_life": 1.222
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 1,
+    "normalisedScore": 0.972,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.158,
+        "currentHlr": {
+          "half_life": 1.683
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "counting-bits",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 33,
+    "totalTestCases": 33,
+    "submissionCount": 2,
+    "normalisedScore": 0.844,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.092,
+        "currentHlr": {
+          "half_life": 1.309
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 2,
+    "normalisedScore": 0.988,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.354,
+        "currentHlr": {
+          "half_life": 1.837
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 2,
+    "normalisedScore": 0.969,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.098,
+        "currentHlr": {
+          "half_life": 1.37
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "matrix-block-sum",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 2,
+    "normalisedScore": 0.837,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.302,
+        "currentHlr": {
+          "half_life": 1.794
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 67,
+    "totalTestCases": 67,
+    "submissionCount": 3,
+    "normalisedScore": 0.804,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.325,
+        "currentHlr": {
+          "half_life": 2.045
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "OK",
+    "hintsUsed": 2,
+    "testCasesPassed": 181,
+    "totalTestCases": 181,
+    "submissionCount": 3,
+    "normalisedScore": 0.771,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.374,
+        "currentHlr": {
+          "half_life": 2.518
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "non-decreasing-array",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 165,
+    "totalTestCases": 165,
+    "submissionCount": 4,
+    "normalisedScore": 0.769,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.501,
+        "currentHlr": {
+          "half_life": 2.777
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_04",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 3,
+    "testCasesPassed": 70,
+    "totalTestCases": 115,
+    "submissionCount": 5,
+    "normalisedScore": 0.325,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.425,
+        "currentHlr": {
+          "half_life": 2.448
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.191,
+        "currentHlr": {
+          "half_life": 1.627
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 2,
+    "normalisedScore": 0.937,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.113,
+        "currentHlr": {
+          "half_life": 1.272
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "counting-bits",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 33,
+    "totalTestCases": 33,
+    "submissionCount": 2,
+    "normalisedScore": 0.925,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.171,
+        "currentHlr": {
+          "half_life": 1.48
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.403,
+        "currentHlr": {
+          "half_life": 2.481
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 1,
+    "normalisedScore": 0.983,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.115,
+        "currentHlr": {
+          "half_life": 1.243
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "matrix-block-sum",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 3,
+    "normalisedScore": 0.883,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.37,
+        "currentHlr": {
+          "half_life": 2.144
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 67,
+    "totalTestCases": 67,
+    "submissionCount": 3,
+    "normalisedScore": 0.801,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.338,
+        "currentHlr": {
+          "half_life": 1.872
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 1,
+    "testCasesPassed": 112,
+    "totalTestCases": 181,
+    "submissionCount": 4,
+    "normalisedScore": 0.406,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.338,
+        "currentHlr": {
+          "half_life": 1.857
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "non-decreasing-array",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 165,
+    "totalTestCases": 165,
+    "submissionCount": 3,
+    "normalisedScore": 0.806,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.537,
+        "currentHlr": {
+          "half_life": 3.782
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_05",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 1,
+    "testCasesPassed": 67,
+    "totalTestCases": 115,
+    "submissionCount": 5,
+    "normalisedScore": 0.339,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.481,
+        "currentHlr": {
+          "half_life": 3.018
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 2,
+    "normalisedScore": 0.939,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.155,
+        "currentHlr": {
+          "half_life": 1.747
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 2,
+    "normalisedScore": 0.945,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.179,
+        "currentHlr": {
+          "half_life": 1.743
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "counting-bits",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 33,
+    "totalTestCases": 33,
+    "submissionCount": 2,
+    "normalisedScore": 0.947,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.138,
+        "currentHlr": {
+          "half_life": 1.379
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 2,
+    "normalisedScore": 0.948,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.368,
+        "currentHlr": {
+          "half_life": 2.554
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 2,
+    "normalisedScore": 0.948,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.136,
+        "currentHlr": {
+          "half_life": 1.384
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "matrix-block-sum",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 1,
+    "normalisedScore": 0.977,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.352,
+        "currentHlr": {
+          "half_life": 2.028
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 67,
+    "totalTestCases": 67,
+    "submissionCount": 2,
+    "normalisedScore": 0.888,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.345,
+        "currentHlr": {
+          "half_life": 2.036
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 181,
+    "totalTestCases": 181,
+    "submissionCount": 3,
+    "normalisedScore": 0.795,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.383,
+        "currentHlr": {
+          "half_life": 2.559
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "non-decreasing-array",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 165,
+    "totalTestCases": 165,
+    "submissionCount": 2,
+    "normalisedScore": 0.937,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.503,
+        "currentHlr": {
+          "half_life": 3.757
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_06",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "WRONG_ANSWER",
+    "hintsUsed": 2,
+    "testCasesPassed": 73,
+    "totalTestCases": 115,
+    "submissionCount": 4,
+    "normalisedScore": 0.398,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.486,
+        "currentHlr": {
+          "half_life": 3.043
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 2,
+    "normalisedScore": 0.974,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.141,
+        "currentHlr": {
+          "half_life": 1.473
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 1,
+    "normalisedScore": 0.97,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.151,
+        "currentHlr": {
+          "half_life": 1.55
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "counting-bits",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 33,
+    "totalTestCases": 33,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.174,
+        "currentHlr": {
+          "half_life": 1.73
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 2,
+    "normalisedScore": 0.988,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.366,
+        "currentHlr": {
+          "half_life": 2.206
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 1,
+    "normalisedScore": 0.976,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.23,
+        "currentHlr": {
+          "half_life": 1.946
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "matrix-block-sum",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.386,
+        "currentHlr": {
+          "half_life": 2.637
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 67,
+    "totalTestCases": 67,
+    "submissionCount": 2,
+    "normalisedScore": 0.906,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.412,
+        "currentHlr": {
+          "half_life": 2.918
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 181,
+    "totalTestCases": 181,
+    "submissionCount": 2,
+    "normalisedScore": 0.908,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.37,
+        "currentHlr": {
+          "half_life": 2.314
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "non-decreasing-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 165,
+    "totalTestCases": 165,
+    "submissionCount": 2,
+    "normalisedScore": 0.904,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.509,
+        "currentHlr": {
+          "half_life": 3.336
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_07",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 115,
+    "totalTestCases": 115,
+    "submissionCount": 1,
+    "normalisedScore": 0.945,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.513,
+        "currentHlr": {
+          "half_life": 4.02
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.224,
+        "currentHlr": {
+          "half_life": 2.082
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 1,
+    "normalisedScore": 0.991,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.176,
+        "currentHlr": {
+          "half_life": 1.756
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "counting-bits",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 33,
+    "totalTestCases": 33,
+    "submissionCount": 1,
+    "normalisedScore": 0.975,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.241,
+        "currentHlr": {
+          "half_life": 1.824
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.425,
+        "currentHlr": {
+          "half_life": 3.175
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 2,
+    "normalisedScore": 0.955,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.158,
+        "currentHlr": {
+          "half_life": 1.687
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "matrix-block-sum",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.425,
+        "currentHlr": {
+          "half_life": 2.734
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 67,
+    "totalTestCases": 67,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.361,
+        "currentHlr": {
+          "half_life": 2.493
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 181,
+    "totalTestCases": 181,
+    "submissionCount": 2,
+    "normalisedScore": 0.883,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.39,
+        "currentHlr": {
+          "half_life": 2.66
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "non-decreasing-array",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 165,
+    "totalTestCases": 165,
+    "submissionCount": 2,
+    "normalisedScore": 0.902,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.552,
+        "currentHlr": {
+          "half_life": 4.839
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_08",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "OK",
+    "hintsUsed": 1,
+    "testCasesPassed": 115,
+    "totalTestCases": 115,
+    "submissionCount": 2,
+    "normalisedScore": 0.903,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.541,
+        "currentHlr": {
+          "half_life": 4.167
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.228,
+        "currentHlr": {
+          "half_life": 1.818
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.259,
+        "currentHlr": {
+          "half_life": 2.031
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "counting-bits",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 33,
+    "totalTestCases": 33,
+    "submissionCount": 1,
+    "normalisedScore": 0.996,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.26,
+        "currentHlr": {
+          "half_life": 2.064
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 2,
+    "normalisedScore": 0.871,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.428,
+        "currentHlr": {
+          "half_life": 2.772
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.174,
+        "currentHlr": {
+          "half_life": 1.768
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "matrix-block-sum",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 2,
+    "normalisedScore": 0.918,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.442,
+        "currentHlr": {
+          "half_life": 3.137
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 67,
+    "totalTestCases": 67,
+    "submissionCount": 1,
+    "normalisedScore": 0.946,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.381,
+        "currentHlr": {
+          "half_life": 2.695
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 181,
+    "totalTestCases": 181,
+    "submissionCount": 2,
+    "normalisedScore": 0.9,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.447,
+        "currentHlr": {
+          "half_life": 3.096
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "non-decreasing-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 165,
+    "totalTestCases": 165,
+    "submissionCount": 1,
+    "normalisedScore": 0.979,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.531,
+        "currentHlr": {
+          "half_life": 3.87
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_09",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 115,
+    "totalTestCases": 115,
+    "submissionCount": 2,
+    "normalisedScore": 0.964,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.538,
+        "currentHlr": {
+          "half_life": 4.523
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "running-sum-of-1d-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 95,
+    "totalTestCases": 95,
+    "submissionCount": 2,
+    "normalisedScore": 0.911,
+    "problemDifficulty": 0.196,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.263,
+        "currentHlr": {
+          "half_life": 1.942
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "maximum-nesting-depth-of-the-parentheses",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 101,
+    "totalTestCases": 101,
+    "submissionCount": 2,
+    "normalisedScore": 0.945,
+    "problemDifficulty": 0.219,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.243,
+        "currentHlr": {
+          "half_life": 2.172
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "counting-bits",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 33,
+    "totalTestCases": 33,
+    "submissionCount": 1,
+    "normalisedScore": 0.997,
+    "problemDifficulty": 0.268,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.221,
+        "currentHlr": {
+          "half_life": 2.073
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "transpose-matrix",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 74,
+    "totalTestCases": 74,
+    "submissionCount": 2,
+    "normalisedScore": 0.936,
+    "problemDifficulty": 0.302,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.434,
+        "currentHlr": {
+          "half_life": 2.787
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "flood-fill",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.326,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.273,
+        "currentHlr": {
+          "half_life": 2.017
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "matrix-block-sum",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 88,
+    "totalTestCases": 88,
+    "submissionCount": 2,
+    "normalisedScore": 0.958,
+    "problemDifficulty": 0.435,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.416,
+        "currentHlr": {
+          "half_life": 3.154
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "binary-tree-level-order-traversal",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 67,
+    "totalTestCases": 67,
+    "submissionCount": 2,
+    "normalisedScore": 0.899,
+    "problemDifficulty": 0.502,
+    "problemTopics": [
+      {
+        "topicId": "graph",
+        "currentMastery": 0.446,
+        "currentHlr": {
+          "half_life": 3.074
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "valid-parenthesis-string",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 181,
+    "totalTestCases": 181,
+    "submissionCount": 1,
+    "normalisedScore": 1.0,
+    "problemDifficulty": 0.603,
+    "problemTopics": [
+      {
+        "topicId": "string",
+        "currentMastery": 0.425,
+        "currentHlr": {
+          "half_life": 3.189
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "non-decreasing-array",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 165,
+    "totalTestCases": 165,
+    "submissionCount": 2,
+    "normalisedScore": 0.948,
+    "problemDifficulty": 0.65,
+    "problemTopics": [
+      {
+        "topicId": "array",
+        "currentMastery": 0.547,
+        "currentHlr": {
+          "half_life": 4.066
+        }
+      }
+    ]
+  },
+  {
+    "userId": "coldstart_user_10",
+    "problemId": "constrained-subsequence-sum",
+    "verdict": "OK",
+    "hintsUsed": 0,
+    "testCasesPassed": 115,
+    "totalTestCases": 115,
+    "submissionCount": 2,
+    "normalisedScore": 0.917,
+    "problemDifficulty": 0.7,
+    "problemTopics": [
+      {
+        "topicId": "dynamic_programming",
+        "currentMastery": 0.527,
+        "currentHlr": {
+          "half_life": 4.671
+        }
+      }
+    ]
+  }
+]

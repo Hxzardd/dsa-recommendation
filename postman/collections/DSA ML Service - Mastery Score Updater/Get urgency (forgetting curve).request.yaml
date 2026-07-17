@@ -1,0 +1,5 @@
+$kind: http-request
+description: HLR-derived urgency per topic -- higher = more likely forgotten, due for review. No auth needed.
+url: "{{base_url}}/urgency/{{user_id}}"
+method: GET
+order: 5000

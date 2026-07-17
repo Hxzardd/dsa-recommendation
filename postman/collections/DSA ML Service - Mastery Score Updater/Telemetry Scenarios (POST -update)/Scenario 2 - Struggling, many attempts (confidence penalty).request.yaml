@@ -1,0 +1,38 @@
+$kind: http-request
+description: 7 submissions and 4 hints on a moderate problem. The confidence penalty in telemetry.py pulls the observed signal down (~0.39), so mastery only creeps upward despite an eventual OK verdict.
+url: "{{base_url}}/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "userId": "postman_demo_user",
+      "problemId": "longest-substring-without-repeating-characters",
+      "verdict": "OK",
+      "hintsUsed": 4,
+      "testCasesPassed": 10,
+      "totalTestCases": 10,
+      "submissionCount": 7,
+      "normalisedScore": 0.6,
+      "problemDifficulty": 0.45,
+      "problemTopics": [
+        {
+          "topicId": "two_pointers",
+          "currentMastery": 0.3,
+          "currentHlr": null
+        },
+        {
+          "topicId": "hash_map",
+          "currentMastery": null,
+          "currentHlr": null
+        },
+        {
+          "topicId": "string",
+          "currentMastery": null,
+          "currentHlr": null
+        }
+      ]
+    }
+order: 2000
