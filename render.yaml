@@ -16,7 +16,7 @@ services:
   - type: web
     name: dsa-recommendation-ml
     runtime: python
-    plan: starter          # change to `free` to try it first; free spins down on idle
+    plan: free             # $0 -- spins down after 15 min idle, cold-starts on next request
     region: oregon          # pick the region closest to your Postgres/Neo4j/Qdrant hosts
     branch: dev              # set to whichever branch you want Render to auto-deploy from
     buildCommand: "pip install -r requirements.txt"
