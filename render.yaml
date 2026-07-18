@@ -1,0 +1,47 @@
+# Render Blueprint for the FastAPI ML recommendation service.
+# https://render.com/docs/blueprint-spec
+#
+# This deploys ONLY the web service (main.py) -- the offline pipeline
+# (pipeline/ingestion, pipeline/graphs, pipeline/embeddings) that builds
+# the vector pool / offline graph and pushes to Qdrant/Neo4j is NOT part
+# of this service and should keep running locally (or in a separate CI
+# job), then push its results to Qdrant/Neo4j, which this service reads.
+#
+# Secrets (marked sync: false below) are NOT stored in this file -- set
+# them in the Render dashboard after the first deploy, or via
+# `render env:set` / the Render CLI. Never commit real credential values
+# here.
+
+services:
+  - type: web
+    name: dsa-recommendation-ml
+    runtime: python
+    plan: starter          # change to `free` to try it first; free spins down on idle
+    region: oregon          # pick the region closest to your Postgres/Neo4j/Qdrant hosts
+    branch: dev              # set to whichever branch you want Render to auto-deploy from
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DATABASE_URL
+        sync: false
+      - key: NEO4J_URI
+        sync: false
+      - key: NEO4J_USERNAME
+        sync: false
+      - key: NEO4J_PASSWORD
+        sync: false
+      - key: NEO4J_DATABASE
+        sync: false
+      - key: NEO4J_OFFLINE_DATABASE
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: problems_full
+      - key: ML_SERVICE_TOKEN
+        sync: false
