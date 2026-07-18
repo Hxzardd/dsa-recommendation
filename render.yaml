@@ -35,8 +35,11 @@ services:
         sync: false
       - key: NEO4J_DATABASE
         sync: false
-      - key: NEO4J_OFFLINE_DATABASE
-        sync: false
+      # NEO4J_OFFLINE_DATABASE deliberately omitted: db_env.py already
+      # falls back to NEO4J_DATABASE when this isn't set at all, which is
+      # exactly the "same link, one database" setup here -- only add this
+      # var (in the Render dashboard, not here) if you ever provision a
+      # genuinely separate Neo4j database for the offline graph.
       - key: QDRANT_URL
         sync: false
       - key: QDRANT_API_KEY
