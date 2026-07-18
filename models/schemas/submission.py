@@ -28,6 +28,14 @@ class TopicState(BaseModel):
     currentMastery: Optional[float] = None   # current BKT P(L), None if no prior data
     currentHlr: Optional[dict] = None        # current HLR state dict, None if no prior data
 
+    # How central this topic is to the problem (0-1), e.g. a problem that's
+    # "70% graphs, 30% dfs" sends weight=0.7 for graph and weight=0.3 for
+    # dfs. Omitted/None -> 1.0 (full effect on every topic, matching prior
+    # behavior exactly before this field existed) -- without it every
+    # co-tagged topic on a problem got an identical mastery/HLR update
+    # regardless of how relevant it actually was.
+    weight: Optional[float] = Field(None, ge=0.0, le=1.0)
+
 
 class Submission(BaseModel):
     userId: str
@@ -83,12 +91,14 @@ class Submission(BaseModel):
                             "last_review": "2026-07-01T00:00:00+00:00",
                             "p_recall": 0.8,
                             "next_review_days": 3.5
-                        }
+                        },
+                        "weight": 0.7
                     },
                     {
                         "topicId": "hash_map",
                         "currentMastery": None,
-                        "currentHlr": None
+                        "currentHlr": None,
+                        "weight": 0.3
                     }
                 ]
             }

@@ -14,7 +14,7 @@ dependencies = [
     # processing exists in the whole pipeline). torchaudio has also been
     # in official maintenance mode since PyTorch 2.8, with features
     # removed in 2.9 -- not worth pinning even if it were used.
-    "transformers>=5.12.1",
+    "transformers>=4.57.0",
     "accelerate>=1.14.0",
     # --- Data ---
     "numpy>=2.4.6",
@@ -39,8 +39,6 @@ dependencies = [
     "rich>=15.0.0",
     "sentence-transformers>=5.6.0",
     "torch==2.11.0",
-    "torchaudio>=2.11.0",
-    "torchvision>=0.26.0",
     "tqdm>=4.68.3",
     "pytz>=2026.2",
     # --- Testing ---

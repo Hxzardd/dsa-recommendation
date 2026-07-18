@@ -1,289 +1,271 @@
 [
   {
+    "topic_slug": "array",
     "topic_id": "array",
     "topic_name": "Array"
   },
   {
+    "topic_slug": "backtracking",
     "topic_id": "backtracking",
     "topic_name": "Backtracking"
   },
   {
+    "topic_slug": "bfs",
     "topic_id": "bfs",
     "topic_name": "Bfs"
   },
   {
-    "topic_id": "binary_search_answer",
-    "topic_name": "Binary Search Answer"
+    "topic_slug": "binary_search",
+    "topic_id": "binary_search",
+    "topic_name": "Binary Search"
   },
   {
+    "topic_slug": "binary_tree",
     "topic_id": "binary_tree",
     "topic_name": "Binary Tree"
   },
   {
+    "topic_slug": "bit_manipulation",
+    "topic_id": "bit_manipulation",
+    "topic_name": "Bit Manipulation"
+  },
+  {
+    "topic_slug": "bitmask_dp",
     "topic_id": "bitmask_dp",
     "topic_name": "Bitmask Dp"
   },
   {
-    "topic_id": "bitwise",
-    "topic_name": "Bitwise"
-  },
-  {
+    "topic_slug": "combinatorics",
     "topic_id": "combinatorics",
     "topic_name": "Combinatorics"
   },
   {
+    "topic_slug": "connected_components",
     "topic_id": "connected_components",
     "topic_name": "Connected Components"
   },
   {
-    "topic_id": "counting_sort",
-    "topic_name": "Counting Sort"
-  },
-  {
-    "topic_id": "cyclic_sort",
-    "topic_name": "Cyclic Sort"
-  },
-  {
+    "topic_slug": "design",
     "topic_id": "design",
     "topic_name": "Design"
   },
   {
+    "topic_slug": "dfs",
     "topic_id": "dfs",
     "topic_name": "Dfs"
   },
   {
+    "topic_slug": "digit_dp",
     "topic_id": "digit_dp",
     "topic_name": "Digit Dp"
   },
   {
+    "topic_slug": "dijkstra",
     "topic_id": "dijkstra",
     "topic_name": "Dijkstra"
   },
   {
+    "topic_slug": "divide_and_conquer",
     "topic_id": "divide_and_conquer",
     "topic_name": "Divide And Conquer"
   },
   {
-    "topic_id": "dp",
-    "topic_name": "Dp"
+    "topic_slug": "dynamic_programming",
+    "topic_id": "dynamic_programming",
+    "topic_name": "Dynamic Programming"
   },
   {
-    "topic_id": "dummy_node",
-    "topic_name": "Dummy Node"
-  },
-  {
+    "topic_slug": "fast_slow_pointers",
     "topic_id": "fast_slow_pointers",
     "topic_name": "Fast Slow Pointers"
   },
   {
-    "topic_id": "floyd_cycle_detection",
-    "topic_name": "Floyd Cycle Detection"
-  },
-  {
+    "topic_slug": "floyd_warshall",
     "topic_id": "floyd_warshall",
     "topic_name": "Floyd Warshall"
   },
   {
+    "topic_slug": "graph",
     "topic_id": "graph",
     "topic_name": "Graph"
   },
   {
+    "topic_slug": "greedy",
     "topic_id": "greedy",
     "topic_name": "Greedy"
   },
   {
-    "topic_id": "greedy_choice",
-    "topic_name": "Greedy Choice"
-  },
-  {
+    "topic_slug": "hash_map",
     "topic_id": "hash_map",
     "topic_name": "Hash Map"
   },
   {
-    "topic_id": "hash_map_counting",
-    "topic_name": "Hash Map Counting"
-  },
-  {
-    "topic_id": "hash_set_lookup",
-    "topic_name": "Hash Set Lookup"
-  },
-  {
+    "topic_slug": "heap",
     "topic_id": "heap",
     "topic_name": "Heap"
   },
   {
+    "topic_slug": "in_place_modification",
     "topic_id": "in_place_modification",
     "topic_name": "In Place Modification"
   },
   {
-    "topic_id": "in_place_reversal",
-    "topic_name": "In Place Reversal"
-  },
-  {
+    "topic_slug": "interval_dp",
     "topic_id": "interval_dp",
     "topic_name": "Interval Dp"
   },
   {
-    "topic_id": "iterative_stack",
-    "topic_name": "Iterative Stack"
-  },
-  {
+    "topic_slug": "kadane",
     "topic_id": "kadane",
     "topic_name": "Kadane"
   },
   {
-    "topic_id": "kahn_algorithm",
-    "topic_name": "Kahn Algorithm"
-  },
-  {
+    "topic_slug": "kmp",
     "topic_id": "kmp",
     "topic_name": "Kmp"
   },
   {
+    "topic_slug": "knapsack_dp",
     "topic_id": "knapsack_dp",
     "topic_name": "Knapsack Dp"
   },
   {
-    "topic_id": "kruskal",
-    "topic_name": "Kruskal"
-  },
-  {
+    "topic_slug": "linked_list",
     "topic_id": "linked_list",
     "topic_name": "Linked List"
   },
   {
+    "topic_slug": "math",
     "topic_id": "math",
     "topic_name": "Math"
   },
   {
+    "topic_slug": "matrix",
     "topic_id": "matrix",
     "topic_name": "Matrix"
   },
   {
-    "topic_id": "memoization",
-    "topic_name": "Memoization"
-  },
-  {
+    "topic_slug": "merge_intervals",
     "topic_id": "merge_intervals",
     "topic_name": "Merge Intervals"
   },
   {
-    "topic_id": "merge_sort",
-    "topic_name": "Merge Sort"
-  },
-  {
+    "topic_slug": "minimum_spanning_tree",
     "topic_id": "minimum_spanning_tree",
     "topic_name": "Minimum Spanning Tree"
   },
   {
+    "topic_slug": "monotonic_queue",
     "topic_id": "monotonic_queue",
     "topic_name": "Monotonic Queue"
   },
   {
+    "topic_slug": "monotonic_stack",
     "topic_id": "monotonic_stack",
     "topic_name": "Monotonic Stack"
   },
   {
+    "topic_slug": "number_theory",
     "topic_id": "number_theory",
     "topic_name": "Number Theory"
   },
   {
+    "topic_slug": "prefix_sum",
     "topic_id": "prefix_sum",
     "topic_name": "Prefix Sum"
   },
   {
+    "topic_slug": "prefix_xor",
     "topic_id": "prefix_xor",
     "topic_name": "Prefix Xor"
   },
   {
+    "topic_slug": "queue",
     "topic_id": "queue",
     "topic_name": "Queue"
   },
   {
-    "topic_id": "recursive_call",
-    "topic_name": "Recursive Call"
+    "topic_slug": "range_query",
+    "topic_id": "range_query",
+    "topic_name": "Range Query"
   },
   {
+    "topic_slug": "recursion",
+    "topic_id": "recursion",
+    "topic_name": "Recursion"
+  },
+  {
+    "topic_slug": "sequence_dp",
     "topic_id": "sequence_dp",
     "topic_name": "Sequence Dp"
   },
   {
+    "topic_slug": "shortest_path",
     "topic_id": "shortest_path",
     "topic_name": "Shortest Path"
   },
   {
+    "topic_slug": "simulation",
     "topic_id": "simulation",
     "topic_name": "Simulation"
   },
   {
+    "topic_slug": "sliding_window",
     "topic_id": "sliding_window",
     "topic_name": "Sliding Window"
   },
   {
-    "topic_id": "square_root_decomposition",
-    "topic_name": "Square Root Decomposition"
+    "topic_slug": "sorting",
+    "topic_id": "sorting",
+    "topic_name": "Sorting"
   },
   {
+    "topic_slug": "stack",
     "topic_id": "stack",
     "topic_name": "Stack"
   },
   {
+    "topic_slug": "state_machine_dp",
     "topic_id": "state_machine_dp",
     "topic_name": "State Machine Dp"
   },
   {
+    "topic_slug": "string",
     "topic_id": "string",
     "topic_name": "String"
   },
   {
+    "topic_slug": "string_matching",
     "topic_id": "string_matching",
     "topic_name": "String Matching"
   },
   {
-    "topic_id": "subsets",
-    "topic_name": "Subsets"
+    "topic_slug": "topological_sort",
+    "topic_id": "topological_sort",
+    "topic_name": "Topological Sort"
   },
   {
-    "topic_id": "tabulation",
-    "topic_name": "Tabulation"
-  },
-  {
-    "topic_id": "top_k_elements",
-    "topic_name": "Top K Elements"
-  },
-  {
-    "topic_id": "topological_order",
-    "topic_name": "Topological Order"
-  },
-  {
+    "topic_slug": "tree",
     "topic_id": "tree",
     "topic_name": "Tree"
   },
   {
+    "topic_slug": "tree_dp",
     "topic_id": "tree_dp",
     "topic_name": "Tree Dp"
   },
   {
-    "topic_id": "tree_traversal",
-    "topic_name": "Tree Traversal"
-  },
-  {
+    "topic_slug": "trie",
     "topic_id": "trie",
     "topic_name": "Trie"
   },
   {
-    "topic_id": "two_heaps",
-    "topic_name": "Two Heaps"
-  },
-  {
-    "topic_id": "two_pass_scan",
-    "topic_name": "Two Pass Scan"
-  },
-  {
+    "topic_slug": "two_pointers",
     "topic_id": "two_pointers",
     "topic_name": "Two Pointers"
   },
   {
+    "topic_slug": "union_find",
     "topic_id": "union_find",
     "topic_name": "Union Find"
   }

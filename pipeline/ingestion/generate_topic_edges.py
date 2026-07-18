@@ -4,8 +4,7 @@ generate_topic_edges.py
 Generates data/problem_topic_edges_normalized.json -- the file bkt.py and
 hlr.py load at startup to know which canonical topics a problem covers.
 
-Source of truth: data/source-target.txt (Aashray's curated mapping using
-the 72 canonical backend topics). Falls back to ingested parquet ONLY if
+Source of truth: data/source-target.txt (). Falls back to ingested parquet ONLY if
 source-target.txt is missing, and even then filters to canonical topics only.
 
 This ensures AI-enriched/implementation-level tags (the old 487-tag problem)
@@ -30,23 +29,15 @@ SOURCE_TARGET = _REPO_ROOT / "data" / "source-target.txt"
 PARQUET_PATH  = _REPO_ROOT / "data" / "vector_pool" / "vector_pool.parquet"
 OUTPUT_PATH   = _REPO_ROOT / "data" / "problem_topic_edges_normalized.json"
 
-CANONICAL_TOPICS: set[str] = {
-    "array","backtracking","bfs","binary_search_answer","binary_tree",
-    "bitmask_dp","bitwise","combinatorics","connected_components",
-    "counting_sort","cyclic_sort","design","dfs","digit_dp","dijkstra",
-    "divide_and_conquer","dp","dummy_node","fast_slow_pointers",
-    "floyd_cycle_detection","floyd_warshall","graph","greedy","greedy_choice",
-    "hash_map","hash_map_counting","hash_set_lookup","heap",
-    "in_place_modification","in_place_reversal","interval_dp","iterative_stack",
-    "kadane","kahn_algorithm","kmp","knapsack_dp","kruskal","linked_list",
-    "math","matrix","memoization","merge_intervals","merge_sort",
-    "minimum_spanning_tree","monotonic_queue","monotonic_stack","number_theory",
-    "prefix_sum","prefix_xor","queue","recursive_call","sequence_dp",
-    "shortest_path","simulation","sliding_window","square_root_decomposition",
-    "stack","state_machine_dp","string","string_matching","subsets","tabulation",
-    "top_k_elements","topological_order","tree","tree_dp","tree_traversal",
-    "trie","two_heaps","two_pass_scan","two_pointers","union_find",
-}
+# FIX: this was the OLD, pre-reconciliation 72-tag ML taxonomy -- kept in
+# sync by hand, which is exactly how it went stale. Now loaded straight
+# from data/topic_tags_taxonomy_v2.json's canonical_tags (the same file
+# database/postgres/topic_taxonomy.py treats as the single source of
+# truth), so the two can never drift apart again. See topic_taxonomy.py's
+# module docstring for the full reconciliation story.
+import sys as _sys
+_sys.path.insert(0, str(_REPO_ROOT))
+from database.postgres.topic_taxonomy import CANONICAL_TAGS as CANONICAL_TOPICS
 
 
 def from_source_target(path: Path) -> list[dict]:
@@ -94,7 +85,7 @@ def from_parquet(path: Path) -> list[dict]:
 def main():
     print("[generate_topic_edges] Starting...")
     if SOURCE_TARGET.exists():
-        print(f"[->] Using Aashray's curated source-target.txt")
+        print(f"[->] Using  curated source-target.txt")
         edges = from_source_target(SOURCE_TARGET)
     elif PARQUET_PATH.exists():
         print(f"[!] source-target.txt not found -- falling back to parquet with canonical filtering")

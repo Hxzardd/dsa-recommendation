@@ -8,10 +8,17 @@ This is the "M" layer's persistence bridge.  It translates raw DB rows
 into typed UserGraph edges.  The controller calls this; the model knows
 nothing about the DB.
 
-Offline graph (loaded at startup):
+Offline graph (loaded at startup -- see main.py's startup hook, which
+calls load_offline_concept_graph() below; before that hook existed this
+was defined but never actually invoked in production, so _PREREQ_CACHE
+stayed permanently empty and every user's cc_edges was always [] --
+prerequisite gating (UserGraph.is_locked) and co-occurrence-based
+exploration (NoveltyPool) were silent no-ops regardless of what data
+existed):
     - concept_graph: dict[slug -> list[ConceptConceptEdge]]
-      Loaded from question-graph/data/topic_topic_edges.json +
-      Postgres TopicPrerequisite table.
+      Neo4j FIRST (pipeline/graphs/neo4j_offline_writer.py), falling back
+      to question-graph/data/topic_topic_edges.json + Postgres
+      TopicPrerequisite table if Neo4j is unavailable.
 
 Online telemetry (loaded per-user on request):
     - Submission         → ProblemEdge (SOLVED / ATTEMPTED)
@@ -58,16 +65,34 @@ _PREREQ_CACHE: dict[str, list[ConceptConceptEdge]] = {}   # loaded once
 
 def load_offline_concept_graph(db=None) -> dict[str, list[ConceptConceptEdge]]:
     """
-    Load concept<->concept edges from:
-      1. question-graph/data/topic_topic_edges.json  (jaccard CO_OCCURS edges)
-      2. Postgres TopicPrerequisite table             (PREREQ edges)
+    Load concept<->concept edges. Neo4j FIRST (pipeline/graphs/
+    neo4j_offline_writer.py's :OfflineTopic graph, the shared,
+    centrally-updated copy any pipeline run can push to), falling back to
+    the local JSON file + Postgres if Neo4j is unavailable or empty --
+    same graceful-degrade convention as every other Neo4j touchpoint in
+    this repo (see neo4j_offline_writer.py's module docstring for the
+    full separation-from-the-online-graph rationale):
+      1. Neo4j :OfflineTopic CO_OCCURS_OFFLINE / PREREQ_OFFLINE edges.
+      2. Fallback: question-graph/data/topic_topic_edges.json (CO_OCCURS)
+         + Postgres TopicPrerequisite table (PREREQ).
     Returns {source_slug: [ConceptConceptEdge, ...]}
     """
     global _PREREQ_CACHE
     cc: dict[str, list[ConceptConceptEdge]] = {}
 
-    # -- CO_OCCURS from normalized JSON --
-    if _TOPIC_TOPIC_JSON.exists():
+    from pipeline.graphs.neo4j_offline_writer import load_cooccurs_edges, load_prereq_edges
+
+    neo4j_cooccurs = load_cooccurs_edges()
+    neo4j_prereq = load_prereq_edges()
+
+    if neo4j_cooccurs:
+        for src, tgt, weight in neo4j_cooccurs:
+            cc.setdefault(src, []).append(ConceptConceptEdge(
+                source_slug=src, target_slug=tgt,
+                edge_type=EdgeType.COOCCURS, weight=weight,
+            ))
+        log.info("Loaded %d CO_OCCURS concept edges from Neo4j", len(neo4j_cooccurs))
+    elif _TOPIC_TOPIC_JSON.exists():
         try:
             raw = json.loads(_TOPIC_TOPIC_JSON.read_text(encoding="utf-8-sig"))
             for e in raw:
@@ -85,13 +110,20 @@ def load_offline_concept_graph(db=None) -> dict[str, list[ConceptConceptEdge]]:
                     weight=float(e.get("jaccard", 0.0)),
                 )
                 cc.setdefault(src, []).append(edge)
-            log.info("Loaded %d CO_OCCURS concept edges from JSON",
+            log.info("Neo4j unavailable/empty -- loaded %d CO_OCCURS concept "
+                     "edges from local JSON instead",
                      sum(len(v) for v in cc.values()))
         except Exception as exc:
             log.warning("Failed to load topic_topic_edges.json: %s", exc)
 
-    # -- PREREQ from Postgres TopicPrerequisite --
-    if db is not None:
+    if neo4j_prereq:
+        for prereq, unlocks in neo4j_prereq:
+            cc.setdefault(prereq, []).append(ConceptConceptEdge(
+                source_slug=prereq, target_slug=unlocks,
+                edge_type=EdgeType.PREREQ, weight=1.0,
+            ))
+        log.info("Loaded %d PREREQ edges from Neo4j", len(neo4j_prereq))
+    elif db is not None:
         try:
             rows = db.execute(
                 "SELECT topic_id, prerequisite_id FROM TopicPrerequisite"
@@ -104,7 +136,8 @@ def load_offline_concept_graph(db=None) -> dict[str, list[ConceptConceptEdge]]:
                     edge_type=EdgeType.PREREQ, weight=1.0,
                 )
                 cc.setdefault(src, []).append(edge)
-            log.info("Loaded %d PREREQ edges from Postgres", len(rows))
+            log.info("Neo4j unavailable/empty -- loaded %d PREREQ edges from "
+                     "Postgres instead", len(rows))
         except Exception as exc:
             log.warning("Failed to load TopicPrerequisite from Postgres: %s", exc)
 

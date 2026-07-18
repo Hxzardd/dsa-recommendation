@@ -192,7 +192,7 @@ def load_curated_normalized() -> CuratedEdges:
         """
         Handle all known problem-topic JSON field name variants:
           normalized zip : source / target
-          raw Aashray    : source / target  (same -- confirmed from actual file)
+          raw   : source / target  (same -- confirmed from actual file)
           potential alts : title_slug / topic_slug, problem_slug / topic_slug,
                            problem_id / topic_id  (Greptile P1: previously missing)
         Checking every known variant ensures curated HAS_TOPIC edges are
