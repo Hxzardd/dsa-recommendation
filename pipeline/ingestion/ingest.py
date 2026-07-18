@@ -24,12 +24,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from schema import FINAL_COLUMNS, EXCLUDE_COLUMNS
 from tag_inference import (
-    infer_topic_tags,
-    infer_algorithm_tags,
-    infer_data_structure_tags,
-    infer_patterns,
-    infer_techniques,
-    infer_skill_tags,
     infer_difficulty_score,
     infer_solution_signature,
     pick_canonical_solution,
@@ -134,24 +128,35 @@ def transform_record(record: Dict[str, Any]) -> Dict[str, Any]:
     out["dislikes"]         = record.get("dislikes", 0) or 0
     out["asked_by_faang"]   = bool(record.get("asked_by_faang", False))
 
-    # -- Tags (all inferred) ---------------------------------------------------
-    out["topic_tags"]          = infer_topic_tags(record)
-    out["algorithm_tags"]      = infer_algorithm_tags(record)
-    out["data_structure_tags"] = infer_data_structure_tags(record)
-    out["patterns"]            = infer_patterns(record)
-    out["techniques"]          = infer_techniques(record)
-    out["skill_tags"]          = infer_skill_tags(record)
-
-    # FIX (Darsheel/Greptile): Replace AI-inferred topic_tags with canonical
-    # tags from source-target.txt. The AI inference produced ~487
-    # implementation-level tags that don't match the backend schema's 72
-    # canonical topics. _CANONICAL_TOPIC_MAP is built once at module load
-    # and maps title_slug -> [canonical_tag, ...]. If the problem has no
-    # canonical mapping, we keep whatever was inferred (fallback) so the
-    # field is never empty for the embedding pipeline.
+    # -- Tags -------------------------------------------------------------------
+    # FIX: this used to call infer_topic_tags(record) (tag_inference.py's
+    # keyword/substring-matching heuristic against solution text -- an
+    # AI/heuristic guess, not real data) as the default, only overriding it
+    # with the reconciled canonical mapping when title_slug happened to
+    # have an entry in source-target.txt -- and even then, silently kept
+    # the AI-inferred guess as a "fallback" for any problem WITHOUT a
+    # canonical entry (per this function's own prior comment: "we keep
+    # whatever was inferred... so the field is never empty"). Confirmed
+    # this left ~1755 of 2913 manifest problems (everything outside
+    # source-target.txt's coverage) with fabricated topic_tags actually
+    # live in Qdrant's payload. topic_tags is now ONLY ever the reconciled
+    # canonical mapping, or [] if this problem has no entry there --
+    # no guessing.
+    #
+    # algorithm_tags/data_structure_tags/patterns/techniques/skill_tags had
+    # NO canonical override at all (100% tag_inference.py heuristic output,
+    # confirmed unused anywhere in pipeline/recommender/'s actual
+    # recommendation logic -- only topic_tags and difficulty_score are ever
+    # read from a problem's payload). Hard-set to [] rather than removing
+    # the columns outright, so downstream schema/parquet code that expects
+    # these keys to exist doesn't need to change.
     slug = record.get("title_slug") or ""
-    if slug in _CANONICAL_TOPIC_MAP:
-        out["topic_tags"] = _CANONICAL_TOPIC_MAP[slug]
+    out["topic_tags"]          = _CANONICAL_TOPIC_MAP.get(slug, [])
+    out["algorithm_tags"]      = []
+    out["data_structure_tags"] = []
+    out["patterns"]            = []
+    out["techniques"]          = []
+    out["skill_tags"]          = []
 
     # -- Relational ------------------------------------------------------------
     out["similar_problem_ids"] = extract_similar_problem_ids(record)

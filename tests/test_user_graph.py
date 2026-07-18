@@ -987,6 +987,30 @@ class TestEdgeMerge(unittest.TestCase):
 
 class TestOfflineCCEdges(unittest.TestCase):
 
+    def setUp(self):
+        # load_offline_concept_graph() tries Neo4j FIRST (see
+        # pipeline/graphs/neo4j_offline_writer.py), falling back to the
+        # local JSON file this test class specifically exercises. Without
+        # this patch, a real reachable+populated Neo4j instance (as this
+        # repo now has) would return non-empty results and the JSON
+        # fallback path these tests are actually testing would never run
+        # -- same isolation pattern as TestGraphAssembly's setUp above.
+        # load_offline_concept_graph() does the import locally inside the
+        # function body (`from pipeline.graphs.neo4j_offline_writer import
+        # load_cooccurs_edges, load_prereq_edges`), re-resolved from that
+        # module on every call -- so the patch target is the ORIGINAL
+        # module's attribute, not a name inside user_graph_service.
+        patcher_cooccurs = patch(
+            "pipeline.graphs.neo4j_offline_writer.load_cooccurs_edges",
+            return_value=[])
+        patcher_prereq = patch(
+            "pipeline.graphs.neo4j_offline_writer.load_prereq_edges",
+            return_value=[])
+        patcher_cooccurs.start()
+        patcher_prereq.start()
+        self.addCleanup(patcher_cooccurs.stop)
+        self.addCleanup(patcher_prereq.stop)
+
     def test_load_from_json(self, tmp_path=None):
         import tempfile, os
         data = [

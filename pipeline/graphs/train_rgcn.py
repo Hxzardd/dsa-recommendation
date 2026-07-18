@@ -392,7 +392,14 @@ def _eval_retrieval_quality(graph, prob_emb):
     Answers: "Did RGCN embeddings improve same-topic retrieval over random?"
     Uses exact cosine KNN on the 128-d embeddings.
     """
-    print("\n── In-process Retrieval Quality (same_topic@10) ────────────")
+    # FIX: the box-drawing characters here (U+2500 etc.) crashed the whole
+    # pipeline with UnicodeEncodeError on Windows consoles using the
+    # default cp1252 codepage -- this print happened right before the
+    # Qdrant re-ingest step, so a purely cosmetic string crashed the run
+    # AFTER training/embeddings/parquet had already succeeded, silently
+    # skipping the re-ingest that was the actual point of the run. ASCII
+    # only, matching every other status line in this pipeline ([OK]/[->]/[X]).
+    print("\n-- In-process Retrieval Quality (same_topic@10) ----------------")
     meta = graph.get("problem_meta", [])
     # build topic groups
     by_topic = defaultdict(list)
@@ -429,7 +436,7 @@ def _eval_retrieval_quality(graph, prob_emb):
     recall_rand = hits_rand / max(n_queries, 1)
     improved = recall_rgcn > recall_rand * 1.5   # at least 1.5x over random
 
-    print(f"  random baseline   same_topic@{K} ≈ {recall_rand:.3f}")
+    print(f"  random baseline   same_topic@{K} ~= {recall_rand:.3f}")
     ratio = recall_rgcn / max(recall_rand, 1e-4)
     tag = f"BETTER x{ratio:.1f}" if recall_rgcn > recall_rand else "not better than random"
     print(f"  rgcn_embedding    same_topic@{K}  = {recall_rgcn:.3f}  [{tag}]")
