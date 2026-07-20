@@ -367,7 +367,7 @@ class TestStateUpdatePersistsToNeo4j(unittest.TestCase):
         redis = FakeRedis()
         neo4j = Neo4jGraphStore(driver=FakeDriver())
         graph_service = UserGraphService(db=None, redis=redis, neo4j=neo4j)
-        state_service = StateUpdateService(graph_service, qdrant=None, bkt_store={}, hlr_store={})
+        state_service = StateUpdateService(graph_service)
 
         original_bkt_map = dict(bkt_module.problem_to_topics)
         original_hlr_map = dict(hlr_module.problem_to_topics)
@@ -380,7 +380,15 @@ class TestStateUpdatePersistsToNeo4j(unittest.TestCase):
                 "testCasesPassed": 10, "totalTestCases": 10,
                 "timestamp": time.time(),
             }
-            state_service.process_submission("u1", submission, rebuild_vector=False)
+            payload = {**submission, "userId": "u1"}
+            updated_mastery, mastered_topics, bkt_results = bkt_module.process_submission(
+                payload, {}
+            )
+            updated_hlr, hlr_results = hlr_module.process_hlr(payload, {})
+            state_service.apply_update(
+                payload, updated_mastery, mastered_topics, bkt_results,
+                updated_hlr, hlr_results,
+            )
 
             # simulate the Redis TTL expiring
             redis.delete("user_graph:u1")
