@@ -243,7 +243,7 @@ class UserGraphService:
         Write-through to BOTH tiers for an already-mutated graph.
 
         get()/new_user_graph() write-through internally after a rebuild --
-        but a caller like StateUpdateService.process_submission() mutates
+        but a caller like StateUpdateService.apply_update() mutates
         its OWN already-fetched graph object directly (adds a ProblemEdge,
         updates ConceptEdges from fresh BKT/HLR output) without going
         through get()'s rebuild path at all. Without this method, such a

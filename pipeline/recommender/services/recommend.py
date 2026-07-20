@@ -298,7 +298,7 @@ def _get_graph(user_id: str, db, redis, neo4j, bkt_store, hlr_store) -> UserGrap
     Fetch the user's graph. ALWAYS goes through UserGraphService.get() first
     -- which checks Redis, then Neo4j (durable, no TTL), before ever
     touching the database -- so a graph mutated by
-    StateUpdateService.process_submission() is actually seen here, even
+    StateUpdateService.apply_update() is actually seen here, even
     when db=None.
 
     Only falls back to a brand-new cold-start graph if every tier is

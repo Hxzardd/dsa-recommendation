@@ -198,6 +198,23 @@ def _submission(problem_id, verdict="OK", score=0.9, ts=None):
     }
 
 
+def _apply_precomputed_update(state_service, bkt_store, hlr_store, user_id, submission):
+    """Mirror /update: compute BKT/HLR once, then project them into the graph."""
+    payload = {**submission, "userId": user_id}
+    updated_mastery, mastered_topics, bkt_results = bkt_module.process_submission(
+        payload, bkt_store.get(user_id, {})
+    )
+    updated_hlr, hlr_results = hlr_module.process_hlr(
+        payload, hlr_store.get(user_id, {})
+    )
+    bkt_store[user_id] = updated_mastery
+    hlr_store[user_id] = updated_hlr
+    return state_service.apply_update(
+        payload, updated_mastery, mastered_topics, bkt_results,
+        updated_hlr, hlr_results,
+    )
+
+
 def _rec_ids(result) -> set:
     return {r["problem_id"] for r in result.recommendations}
 
@@ -225,9 +242,12 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
         self.hlr_store: dict = {}
         self.graph_service = UserGraphService(
             db=None, redis=self.redis, bkt=self.bkt_store, hlr=self.hlr_store)
-        self.state_service = StateUpdateService(
-            self.graph_service, qdrant=self.qdrant,
-            bkt_store=self.bkt_store, hlr_store=self.hlr_store)
+        self.state_service = StateUpdateService(self.graph_service)
+
+    def _apply_update(self, user_id, submission):
+        return _apply_precomputed_update(
+            self.state_service, self.bkt_store, self.hlr_store, user_id, submission
+        )
 
     def tearDown(self):
         _restore_problem_topic_mapping()
@@ -252,7 +272,7 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
         # should rise, unlocking pool F (stretch) / pool E (review) / pool
         # D (weakness on OTHER topics now that array is comparatively strong)
         for i in range(6):
-            self.state_service.process_submission(
+            self._apply_update(
                 "progressing_user", _submission(f"array_{i}", verdict="OK", score=0.95))
 
         after = self._recommend("progressing_user")
@@ -265,7 +285,7 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
     def test_solved_problems_never_recommended_again(self):
         solved_ids = [f"array_{i}" for i in range(6)]
         for pid in solved_ids:
-            self.state_service.process_submission(
+            self._apply_update(
                 "progressing_user", _submission(pid, verdict="OK", score=0.95))
 
         after = self._recommend("progressing_user")
@@ -290,7 +310,7 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
         self.assertTrue(state_before.is_cold_start)
 
         for i in range(3):
-            self.state_service.process_submission(
+            self._apply_update(
                 "progressing_user", _submission(f"array_{i}", verdict="OK", score=0.9))
 
         graph_after = self._get_graph_or_new("progressing_user")
@@ -310,7 +330,7 @@ class TestSingleUserProgressionChangesRanking(unittest.TestCase):
         self.assertEqual(plan_before.level, "beginner")
 
         for i in range(10):
-            self.state_service.process_submission(
+            self._apply_update(
                 "progressing_user", _submission(f"array_{i}", verdict="OK", score=0.95))
 
         graph_after = self._get_graph_or_new("progressing_user")
@@ -333,9 +353,12 @@ class TestDifferentUsersDiverge(unittest.TestCase):
         self.hlr_store: dict = {}
         self.graph_service = UserGraphService(
             db=None, redis=self.redis, bkt=self.bkt_store, hlr=self.hlr_store)
-        self.state_service = StateUpdateService(
-            self.graph_service, qdrant=self.qdrant,
-            bkt_store=self.bkt_store, hlr_store=self.hlr_store)
+        self.state_service = StateUpdateService(self.graph_service)
+
+    def _apply_update(self, user_id, submission):
+        return _apply_precomputed_update(
+            self.state_service, self.bkt_store, self.hlr_store, user_id, submission
+        )
 
     def tearDown(self):
         _restore_problem_topic_mapping()
@@ -356,12 +379,12 @@ class TestDifferentUsersDiverge(unittest.TestCase):
     def test_users_diverge_after_different_progress(self):
         # User A solves only "array" problems
         for i in range(6):
-            self.state_service.process_submission(
+            self._apply_update(
                 "user_a", _submission(f"array_{i}", verdict="OK", score=0.95))
 
         # User B solves only "graph" problems
         for i in range(6):
-            self.state_service.process_submission(
+            self._apply_update(
                 "user_b", _submission(f"graph_{i}", verdict="OK", score=0.95))
 
         result_a = self._recommend("user_a")
@@ -373,10 +396,10 @@ class TestDifferentUsersDiverge(unittest.TestCase):
 
     def test_diverged_users_reflect_their_own_topic_focus(self):
         for i in range(6):
-            self.state_service.process_submission(
+            self._apply_update(
                 "user_a", _submission(f"array_{i}", verdict="OK", score=0.95))
         for i in range(6):
-            self.state_service.process_submission(
+            self._apply_update(
                 "user_b", _submission(f"graph_{i}", verdict="OK", score=0.95))
 
         result_a = self._recommend("user_a")
@@ -415,8 +438,7 @@ class TestManySimulatedUsersAreNotAllIdentical(unittest.TestCase):
             bkt_store: dict = {}
             hlr_store: dict = {}
             graph_service = UserGraphService(db=None, redis=redis, bkt=bkt_store, hlr=hlr_store)
-            state_service = StateUpdateService(
-                graph_service, qdrant=qdrant, bkt_store=bkt_store, hlr_store=hlr_store)
+            state_service = StateUpdateService(graph_service)
 
             topic_focus = ["array", "graph", "tree", "dp", "string"]
             distinct_slates = set()
@@ -424,8 +446,10 @@ class TestManySimulatedUsersAreNotAllIdentical(unittest.TestCase):
             for idx, topic in enumerate(topic_focus):
                 user_id = f"sim_user_{idx}"
                 for i in range(5):
-                    state_service.process_submission(
-                        user_id, _submission(f"{topic}_{i}", verdict="OK", score=0.9))
+                    _apply_precomputed_update(
+                        state_service, bkt_store, hlr_store, user_id,
+                        _submission(f"{topic}_{i}", verdict="OK", score=0.9),
+                    )
                 result = get_recommendations(
                     user_id, db=None, redis=redis, qdrant=qdrant,
                     bkt_store=bkt_store, hlr_store=hlr_store, k=10)
