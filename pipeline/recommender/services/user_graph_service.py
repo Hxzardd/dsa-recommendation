@@ -8,10 +8,17 @@ This is the "M" layer's persistence bridge.  It translates raw DB rows
 into typed UserGraph edges.  The controller calls this; the model knows
 nothing about the DB.
 
-Offline graph (loaded at startup):
+Offline graph (loaded at startup -- see main.py's startup hook, which
+calls load_offline_concept_graph() below; before that hook existed this
+was defined but never actually invoked in production, so _PREREQ_CACHE
+stayed permanently empty and every user's cc_edges was always [] --
+prerequisite gating (UserGraph.is_locked) and co-occurrence-based
+exploration (NoveltyPool) were silent no-ops regardless of what data
+existed):
     - concept_graph: dict[slug -> list[ConceptConceptEdge]]
-      Loaded from question-graph/data/topic_topic_edges.json +
-      Postgres TopicPrerequisite table.
+      Neo4j FIRST (pipeline/graphs/neo4j_offline_writer.py), falling back
+      to question-graph/data/topic_topic_edges.json + Postgres
+      TopicPrerequisite table if Neo4j is unavailable.
 
 Online telemetry (loaded per-user on request):
     - Submission         → ProblemEdge (SOLVED / ATTEMPTED)
@@ -41,6 +48,9 @@ from pipeline.recommender.models.user_graph import (
     UserGraph, UserNode, ProblemEdge, ConceptEdge,
     ConceptConceptEdge, EdgeType,
 )
+from database.postgres.db import (
+    get_connection, release_connection, _topic_id_to_ml_slug,
+)
 
 log = logging.getLogger(__name__)
 
@@ -55,16 +65,34 @@ _PREREQ_CACHE: dict[str, list[ConceptConceptEdge]] = {}   # loaded once
 
 def load_offline_concept_graph(db=None) -> dict[str, list[ConceptConceptEdge]]:
     """
-    Load concept<->concept edges from:
-      1. question-graph/data/topic_topic_edges.json  (jaccard CO_OCCURS edges)
-      2. Postgres TopicPrerequisite table             (PREREQ edges)
+    Load concept<->concept edges. Neo4j FIRST (pipeline/graphs/
+    neo4j_offline_writer.py's :OfflineTopic graph, the shared,
+    centrally-updated copy any pipeline run can push to), falling back to
+    the local JSON file + Postgres if Neo4j is unavailable or empty --
+    same graceful-degrade convention as every other Neo4j touchpoint in
+    this repo (see neo4j_offline_writer.py's module docstring for the
+    full separation-from-the-online-graph rationale):
+      1. Neo4j :OfflineTopic CO_OCCURS_OFFLINE / PREREQ_OFFLINE edges.
+      2. Fallback: question-graph/data/topic_topic_edges.json (CO_OCCURS)
+         + Postgres TopicPrerequisite table (PREREQ).
     Returns {source_slug: [ConceptConceptEdge, ...]}
     """
     global _PREREQ_CACHE
     cc: dict[str, list[ConceptConceptEdge]] = {}
 
-    # -- CO_OCCURS from normalized JSON --
-    if _TOPIC_TOPIC_JSON.exists():
+    from pipeline.graphs.neo4j_offline_writer import load_cooccurs_edges, load_prereq_edges
+
+    neo4j_cooccurs = load_cooccurs_edges()
+    neo4j_prereq = load_prereq_edges()
+
+    if neo4j_cooccurs:
+        for src, tgt, weight in neo4j_cooccurs:
+            cc.setdefault(src, []).append(ConceptConceptEdge(
+                source_slug=src, target_slug=tgt,
+                edge_type=EdgeType.COOCCURS, weight=weight,
+            ))
+        log.info("Loaded %d CO_OCCURS concept edges from Neo4j", len(neo4j_cooccurs))
+    elif _TOPIC_TOPIC_JSON.exists():
         try:
             raw = json.loads(_TOPIC_TOPIC_JSON.read_text(encoding="utf-8-sig"))
             for e in raw:
@@ -82,13 +110,20 @@ def load_offline_concept_graph(db=None) -> dict[str, list[ConceptConceptEdge]]:
                     weight=float(e.get("jaccard", 0.0)),
                 )
                 cc.setdefault(src, []).append(edge)
-            log.info("Loaded %d CO_OCCURS concept edges from JSON",
+            log.info("Neo4j unavailable/empty -- loaded %d CO_OCCURS concept "
+                     "edges from local JSON instead",
                      sum(len(v) for v in cc.values()))
         except Exception as exc:
             log.warning("Failed to load topic_topic_edges.json: %s", exc)
 
-    # -- PREREQ from Postgres TopicPrerequisite --
-    if db is not None:
+    if neo4j_prereq:
+        for prereq, unlocks in neo4j_prereq:
+            cc.setdefault(prereq, []).append(ConceptConceptEdge(
+                source_slug=prereq, target_slug=unlocks,
+                edge_type=EdgeType.PREREQ, weight=1.0,
+            ))
+        log.info("Loaded %d PREREQ edges from Neo4j", len(neo4j_prereq))
+    elif db is not None:
         try:
             rows = db.execute(
                 "SELECT topic_id, prerequisite_id FROM TopicPrerequisite"
@@ -101,7 +136,8 @@ def load_offline_concept_graph(db=None) -> dict[str, list[ConceptConceptEdge]]:
                     edge_type=EdgeType.PREREQ, weight=1.0,
                 )
                 cc.setdefault(src, []).append(edge)
-            log.info("Loaded %d PREREQ edges from Postgres", len(rows))
+            log.info("Neo4j unavailable/empty -- loaded %d PREREQ edges from "
+                     "Postgres instead", len(rows))
         except Exception as exc:
             log.warning("Failed to load TopicPrerequisite from Postgres: %s", exc)
 
@@ -252,14 +288,21 @@ class UserGraphService:
         return graph
 
     def _fetch_user(self, user_id: str) -> Optional[UserNode]:
+        # Table/column names match the REAL deployed schema, not the
+        # PascalCase Prisma-style names this query previously assumed
+        # (which don't exist in the actual database -- confirmed directly
+        # against a live instance of this backend project: "user" is
+        # lowercase and needs quoting since it's a reserved word; its
+        # primary key column is `id`, not `user_id`; `name`, not
+        # `username`; `onboarding_completed`, not `onboarding_complete`).
         try:
             row = self._db.execute(
                 """
-                SELECT u.user_id, u.username, u.onboarding_complete,
+                SELECT u.id, u.name, u.onboarding_completed,
                        x.total_xp, x.current_level
-                FROM   "User"  u
-                LEFT JOIN "UserXP" x ON x.user_id = u.user_id
-                WHERE  u.user_id = :uid
+                FROM   "user"  u
+                LEFT JOIN user_xp x ON x.user_id = u.id
+                WHERE  u.id = :uid
                 """,
                 {"uid": user_id},
             ).fetchone()
@@ -283,7 +326,7 @@ class UserGraphService:
                 """
                 SELECT problem_id, verdict, normalised_score,
                        hints_used, submission_count, submitted_at
-                FROM   "Submission"
+                FROM   submission
                 WHERE  user_id = :uid AND status = 'COMPLETED'
                 ORDER  BY submitted_at DESC
                 LIMIT  500
@@ -317,7 +360,7 @@ class UserGraphService:
             rows = self._db.execute(
                 """
                 SELECT problem_id, recommended_at, was_skipped, skip_count
-                FROM   "RecommendationLog"
+                FROM   recommendation_log
                 WHERE  user_id = :uid
                 ORDER  BY recommended_at DESC
                 LIMIT  300
@@ -344,14 +387,31 @@ class UserGraphService:
             graph.add_problem_edge(edge)
 
     def _load_topic_mastery(self, graph: UserGraph, user_id: str) -> None:
-        """Load UserTopicMastery → ConceptEdge.  Merges BKT + HLR state."""
+        """
+        Load UserTopicMastery → ConceptEdge. Merges BKT + HLR state.
+
+        user_topic_mastery.topic_id is a FK to the backend's topic.id (an
+        opaque generated id) -- it is NOT an ML-pipeline slug. Every
+        downstream consumer of ConceptEdge.concept_slug (CoursePathPool's
+        target_concepts, mastered_concepts(), Qdrant topic_tags matching,
+        etc.) expects the ML slug ("array"), so each row's topic_id is
+        translated via database.postgres.topic_taxonomy before use here --
+        same translation get_user_mastery()/get_user_hlr() apply. Without
+        this, concept_slug was literally the opaque topic.id string, which
+        never matches any real Qdrant topic_tags value: every pool that
+        targets "concepts the user knows/is learning" silently found zero
+        candidates for any user with real seeded mastery, even though
+        graph.concept_edges looked non-empty. Rows for a topic_id with no
+        ML-slug counterpart (topic_taxonomy.UNMAPPED_TOPIC_SLUGS) are
+        skipped, not guessed.
+        """
         try:
             rows = self._db.execute(
                 """
                 SELECT topic_id, mastery_score, confidence,
                        attempt_count, problems_solved, last_attempted,
                        sm2_ef, sm2_interval, next_review_date
-                FROM   "UserTopicMastery"
+                FROM   user_topic_mastery
                 WHERE  user_id = :uid
                 """,
                 {"uid": user_id},
@@ -363,61 +423,81 @@ class UserGraphService:
         bkt_user = self._bkt.get(user_id, {})
         hlr_user = self._hlr.get(user_id, {})
 
-        for row in rows:
-            (topic_id, mastery_score, confidence, attempt_count,
-             problems_solved, last_attempted, sm2_ef, sm2_interval,
-             next_review_date) = row
+        topic_conn = get_connection()
+        try:
+            for row in rows:
+                (raw_topic_id, mastery_score, confidence, attempt_count,
+                 problems_solved, last_attempted, sm2_ef, sm2_interval,
+                 next_review_date) = row
 
-            # BKT P(L) from Shraddha's online store takes precedence
-            bkt_mastery = bkt_user.get(topic_id)
-            final_mastery = float(bkt_mastery) if bkt_mastery is not None \
-                            else float(mastery_score or 0) / 100.0
+                topic_id = _topic_id_to_ml_slug(topic_conn, str(raw_topic_id))
+                if topic_id is None:
+                    continue
+                self._add_topic_mastery_edge(
+                    graph, topic_id, mastery_score, confidence, last_attempted,
+                    sm2_ef, sm2_interval, next_review_date, bkt_user, hlr_user,
+                )
+        finally:
+            release_connection(topic_conn)
 
-            hlr_topic = hlr_user.get(topic_id, {})
-            hlr_urgency = 0.0
-            hlr_half_life = 1.0
+    def _add_topic_mastery_edge(self, graph, topic_id, mastery_score, confidence,
+                                last_attempted, sm2_ef, sm2_interval,
+                                next_review_date, bkt_user, hlr_user) -> None:
+        # BKT P(L) from Shraddha's online store takes precedence.
+        # user_topic_mastery.mastery_score is ALREADY 0-1 in the real
+        # schema (confirmed against a live instance of this backend
+        # project) -- the /100.0 here previously assumed a 0-100 scale
+        # that doesn't exist, silently shrinking every loaded mastery
+        # value to ~1/100th of its real value.
+        bkt_mastery = bkt_user.get(topic_id)
+        final_mastery = float(bkt_mastery) if bkt_mastery is not None \
+                        else float(mastery_score or 0)
 
-            if hlr_topic:
-                from pipeline.recommender.hlr import calculate_urgency
-                import time as _t
-                hlr_urgency   = calculate_urgency(hlr_topic, _t.time())
-                hlr_half_life = float(hlr_topic.get("half_life", 1.0))
+        hlr_topic = hlr_user.get(topic_id, {})
+        hlr_urgency = 0.0
+        hlr_half_life = 1.0
 
-            # confidence = 1 - CV(last 5 performance scores).
-            # HLR stores performance on last attempt; schema stores confidence
-            # as low/medium/high string — map to float for the edge.
-            conf_raw = str(confidence or "medium")
-            conf_map = {"low": 0.33, "medium": 0.66, "high": 1.0}
-            final_confidence = conf_map.get(conf_raw.lower(), 0.66)
+        if hlr_topic:
+            from pipeline.recommender.hlr import calculate_urgency
+            import time as _t
+            hlr_urgency   = calculate_urgency(hlr_topic, _t.time())
+            hlr_half_life = float(hlr_topic.get("half_life", 1.0))
 
-            ts_last = None
-            if last_attempted:
-                ts_last = last_attempted.timestamp() \
-                    if hasattr(last_attempted, "timestamp") \
-                    else float(last_attempted)
+        # confidence = 1 - CV(last 5 performance scores).
+        # HLR stores performance on last attempt; schema stores confidence
+        # as low/medium/high string — map to float for the edge.
+        conf_raw = str(confidence or "medium")
+        conf_map = {"low": 0.33, "medium": 0.66, "high": 1.0}
+        final_confidence = conf_map.get(conf_raw.lower(), 0.66)
 
-            nrd_str = str(next_review_date) if next_review_date else None
+        ts_last = None
+        if last_attempted:
+            ts_last = last_attempted.timestamp() \
+                if hasattr(last_attempted, "timestamp") \
+                else float(last_attempted)
 
-            if final_mastery >= 0.7:
-                etype = EdgeType.MASTERED
-            elif final_mastery > 0.0:
-                etype = EdgeType.LEARNING
-            else:
-                continue
+        nrd_str = str(next_review_date) if next_review_date else None
 
-            edge = ConceptEdge(
-                concept_slug=str(topic_id),
-                edge_type=etype,
-                mastery_score=final_mastery,
-                confidence=final_confidence,
-                half_life=hlr_half_life,
-                urgency=float(hlr_urgency),
-                sm2_ef=float(sm2_ef or 2.5),
-                sm2_interval=int(sm2_interval or 1),
-                next_review_date=nrd_str,
-                last_attempted=ts_last,
-            )
-            graph.add_concept_edge(edge)
+        if final_mastery >= 0.7:
+            etype = EdgeType.MASTERED
+        elif final_mastery > 0.0:
+            etype = EdgeType.LEARNING
+        else:
+            return
+
+        edge = ConceptEdge(
+            concept_slug=str(topic_id),
+            edge_type=etype,
+            mastery_score=final_mastery,
+            confidence=final_confidence,
+            half_life=hlr_half_life,
+            urgency=float(hlr_urgency),
+            sm2_ef=float(sm2_ef or 2.5),
+            sm2_interval=int(sm2_interval or 1),
+            next_review_date=nrd_str,
+            last_attempted=ts_last,
+        )
+        graph.add_concept_edge(edge)
 
     def _load_concept_gaps(self, graph: UserGraph, user_id: str) -> None:
         """Load ConceptGapProfile → augments ConceptEdge with severity."""
@@ -425,7 +505,7 @@ class UserGraphService:
             rows = self._db.execute(
                 """
                 SELECT gap_name, severity
-                FROM   "ConceptGapProfile"
+                FROM   concept_gap_profile
                 WHERE  user_id = :uid AND severity > 0.3
                 """,
                 {"uid": user_id},

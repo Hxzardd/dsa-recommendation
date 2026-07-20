@@ -113,10 +113,24 @@ class CandidateFilteringLayer:
 
     # ------------------------------------------------------------------ public
 
-    def run(self, pool_candidates: dict) -> tuple:
+    def run(self, pool_candidates: dict, apply_zpd: bool = True) -> tuple:
         """
         Full pipeline: per-pool filter -> merge/dedup -> ZPD band filter.
         Returns (list[MergedCandidate], FilterReport).
+
+        apply_zpd=False skips the final ZPD band step (still runs the
+        per-pool solved/locked filter and dedup merge), returning the
+        pre-ZPD merged list instead. Default True preserves this method's
+        exact existing behaviour/output for every current caller -- see
+        pipeline/recommender/services/recommend.py's get_recommendations
+        for the one caller that uses apply_zpd=False, as a graceful-
+        degradation retry when the strict ZPD band leaves zero candidates
+        (a real, not hypothetical, case: a user with real but still-low
+        mastery recommended against a catalog whose difficulty floor sits
+        above what the ZPD band tolerates for that mastery level -- every
+        candidate legitimately reads as "too hard", emptying the strict
+        pass entirely). An empty /recommend response is a worse outcome
+        than serving the best-available (pre-ZPD) candidates.
         """
         report = FilterReport()
         filtered_by_pool = {}
@@ -127,7 +141,8 @@ class CandidateFilteringLayer:
         merged, dup_count = self._merge(filtered_by_pool)
         report.removed_duplicates = dup_count
 
-        merged = self._apply_zpd_filter(merged, report)
+        if apply_zpd:
+            merged = self._apply_zpd_filter(merged, report)
         report.output_count = len(merged)
         return merged, report
 

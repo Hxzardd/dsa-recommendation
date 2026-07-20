@@ -338,7 +338,19 @@ def infer_difficulty_score(record: Dict[str, Any]) -> float:
     if rating is not None:
         try:
             r = float(rating)
-            return round(max(0.1, min(0.9, 1.0 - r * 0.7 + 0.1)), 3)
+            # Compress rating (a like-ratio, 0-1, higher = better-liked/
+            # easier) into the target [0.1, 0.9] difficulty range.
+            # BUG (fixed): the previous formula was `1.0 - r*0.7 + 0.1`
+            # == `1.1 - 0.7*r`, which only reaches 0.4 at r=1.0 (the
+            # best-liked, easiest problems) instead of the intended 0.1 --
+            # the 0.1 floor was structurally unreachable for ANY rating
+            # value, so no problem in the catalog could ever be scored
+            # below ~0.4 difficulty. Confirmed empirically: a live query of
+            # the ingested Qdrant collection found zero problems below
+            # 0.34 difficulty catalog-wide. `0.9 - r*0.8` correctly spans
+            # the full target range: r=0 -> 0.9 (least-liked/hardest),
+            # r=1 -> 0.1 (best-liked/easiest).
+            return round(max(0.1, min(0.9, 0.9 - r * 0.8)), 3)
         except (TypeError, ValueError):
             pass
     if freq is not None:

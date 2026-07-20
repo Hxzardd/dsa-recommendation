@@ -1,0 +1,4 @@
+$kind: collection
+name: Seeding (CF/LC history import)
+description: These two routes DO check a header -- X-User-Id must equal {{user_id}} or you get a 403 (see routes/seeding.py's require_same_user docstring for why this is a placeholder, not real auth).
+order: 2000

@@ -28,7 +28,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pipeline.recommender.models.user_graph import (
-    UserGraph, ProblemEdge, ConceptEdge, EdgeType,
+    UserGraph, ProblemEdge, EdgeType,
 )
 from pipeline.recommender.services.user_graph_service import UserGraphService
 
@@ -94,7 +94,7 @@ class StateUpdateService:
         graph = self._get_or_create_graph(user_id)
         self._apply_problem_edge(graph, submission, now)
         updated_topics = self._apply_concept_updates(
-            graph, bkt_results, hlr_results, updated_mastery, updated_hlr)
+            graph, bkt_results, updated_mastery, updated_hlr)
 
         # Write-through the mutated graph to BOTH tiers. invalidate()
         # first clears any stale Redis entry (defensive: if persist() then
@@ -152,8 +152,7 @@ class StateUpdateService:
         ))
 
     def _apply_concept_updates(self, graph: UserGraph, bkt_results: list,
-                               hlr_results: list, updated_mastery: dict,
-                               updated_hlr: dict) -> list:
+                               updated_mastery: dict, updated_hlr: dict) -> list:
         """
         Update every ConceptEdge touched by this submission with fresh
         mastery (BKT) and urgency/half_life (HLR) values. Returns the list

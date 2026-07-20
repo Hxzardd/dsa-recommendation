@@ -1,0 +1,28 @@
+$kind: http-request
+description: Topic mastery=0.85, problem difficulty=0.05 -- solving something far below your current level barely counts as evidence of growth. Both mastery-proximity AND trivial-gap dampening stack here, so the gain is almost flat.
+url: "{{base_url}}/update"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "userId": "postman_demo_user",
+      "problemId": "two-sum",
+      "verdict": "OK",
+      "hintsUsed": 0,
+      "testCasesPassed": 10,
+      "totalTestCases": 10,
+      "submissionCount": 1,
+      "normalisedScore": 1.0,
+      "problemDifficulty": 0.05,
+      "problemTopics": [
+        {
+          "topicId": "hash_map",
+          "currentMastery": 0.85,
+          "currentHlr": null
+        }
+      ]
+    }
+order: 6000

@@ -1,0 +1,7 @@
+$kind: http-request
+description: Requires the user row to have linked_codeforces set (use seed_test_session.py --cf).
+url: "{{base_url}}/seed_hlr/{{user_id}}"
+method: POST
+headers:
+  X-User-Id: "{{user_id}}"
+order: 1000

@@ -314,6 +314,47 @@ class BasePool:
                 break
         return out
 
+    def _lowest_difficulty_by_concept(self, concept_slugs, n, exclude,
+                                      graph: Optional[UserGraph] = None) -> list[Candidate]:
+        """
+        Pull problems tagged with any of the given concepts, sorted by
+        difficulty_score ascending, taking the n lowest available.
+
+        For catalogs where EASY_BAND (0-0.34) has no matching data at all,
+        _problems_by_concept's band-filtered query returns nothing even
+        though lower-relative-difficulty problems exist just above the
+        band cutoff. This ranks by actual difficulty_score instead of a
+        fixed absolute band, so cold-start users still get the lowest
+        difficulty problems the catalog actually has for these concepts.
+        """
+        if not self.qdrant or not concept_slugs:
+            return []
+        from qdrant_client.models import Filter, FieldCondition, MatchAny
+        try:
+            points, _ = self.qdrant.scroll(
+                collection_name=self.collection,
+                scroll_filter=Filter(must=[
+                    FieldCondition(key="topic_tags", match=MatchAny(any=list(concept_slugs))),
+                ]),
+                limit=max(n * 10, 100), with_payload=True, with_vectors=False,
+            )
+        except Exception:
+            return []
+        candidates = []
+        for p in points:
+            pl = p.payload or {}
+            pid = str(pl.get("problem_id", p.id))
+            if pid in exclude:
+                continue
+            candidates.append(Candidate(
+                pid, self.name,
+                topic_tags=pl.get("topic_tags") or [],
+                difficulty_score=pl.get("difficulty_score"),
+            ))
+        candidates.sort(key=lambda c: c.difficulty_score if c.difficulty_score is not None else 1.0)
+        out = candidates[:n]
+        return self._self_filter_locked(out, graph)
+
     def _ann(self, query_vec,  n, exclude, graph: Optional[UserGraph] = None,  mix: Optional[dict] = None,) -> list[Candidate]:
         """
         ANN search over the user/query vector on the full collection.

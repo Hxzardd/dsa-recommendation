@@ -208,6 +208,31 @@ def get_recommendations(
     orchestrator = PoolGenerationOrchestrator(qdrant=qdrant, collection=collection)
     gen_result = orchestrator.generate(graph, state, total_n=total_n)
 
+    # Cold-start users get simpler, single-concept problems -- both to keep
+    # the slate legible (a brand-new user seeing "dp, string, two_pointers,
+    # tabulation" on their very first recommendation is confusing, not
+    # helpful) and because it fixes a real interaction with DiversityMixer's
+    # max_per_topic cap below: _within_caps rejects a candidate if ANY of
+    # its tags is already at cap, so candidates carrying 3-5 tags each
+    # (near-universal in this catalog) exhaust a shared tag's budget after
+    # just 2-3 picks and silently starve the slate well short of k, even
+    # when plenty of relevant candidates remain. Restricting to <=2 tags
+    # for cold start keeps each pick "burning" at most 2 tag-budgets
+    # instead of 3-5, so the requested k is actually reachable. Falls back
+    # to the unfiltered list if this would empty it out entirely (a
+    # genuinely tag-sparse catalog shouldn't return nothing).
+    if gen_result.difficulty_plan.is_cold_start:
+        # Progressive relaxation (<=2 -> <=3 -> unfiltered): this catalog's
+        # entries mostly carry 3-5 tags each, so a strict <=2 cutoff alone
+        # can leave too few candidates for a given topic/pool combination.
+        # Prefer the simplest available slate rather than an empty or
+        # single-candidate one.
+        for max_tags in (2, 3):
+            simple = [mc for mc in gen_result.merged_candidates if len(mc.topic_tags or []) <= max_tags]
+            if len(simple) >= k:
+                gen_result.merged_candidates = simple
+                break
+
     filtering = CandidateFilteringLayer(graph)
     ranker_rows = filtering.to_ranker_input(gen_result.merged_candidates)
 
@@ -225,7 +250,19 @@ def get_recommendations(
 
     ordered_candidates = [by_id[row["problem_id"]] for row in ranked_rows if row["problem_id"] in by_id]
 
-    mixer = DiversityMixer(max_per_pool=max_per_pool, max_per_topic=max_per_topic)
+    # Pool diversity ("no single pool dominates the slate") only means
+    # something when several pools actually have candidates. A cold-start
+    # user typically only gets real output from 1-2 pools (course_path +
+    # novelty -- weakness/review/stretch/vector all need history that
+    # doesn't exist yet), so the default max_per_pool=3 caps the ONLY
+    # pools with data down to a handful of picks and starves the slate
+    # well short of k even when plenty of relevant candidates remain.
+    # Relaxing the pool cap to k for cold start doesn't defeat diversity --
+    # there's nothing to diversify AWAY from when only one pool is
+    # contributing anyway.
+    effective_max_per_pool = k if gen_result.difficulty_plan.is_cold_start else max_per_pool
+
+    mixer = DiversityMixer(max_per_pool=effective_max_per_pool, max_per_topic=max_per_topic)
     final_candidates = mixer.mix(ordered_candidates, k=k, relevance_scores=scores_by_id)
 
     # Resolve real problem details from Qdrant -- the backend/frontend needs

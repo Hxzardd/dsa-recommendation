@@ -76,7 +76,15 @@ def _qdrant_offline_step_cmd():
     return cmd
 
 
-TOPIC_EDGES_PATH = "question-graph/data/problem_topic_edges_normalized.json"
+# FIX: this pointed at "question-graph/data/problem_topic_edges_normalized.json",
+# which never exists (that directory only ever had problem_topic_edges.json,
+# not the _normalized variant) -- generate_topic_edges.py actually writes
+# to data/problem_topic_edges_normalized.json (the same file bkt.py/hlr.py
+# load at import time). The stale path meant this existence-check was
+# ALWAYS False, so every --force-offline run silently re-generated and
+# overwrote the topic edges from scratch even when a current, correct
+# version (e.g. the taxonomy-reconciled one already in data/) existed.
+TOPIC_EDGES_PATH = "data/problem_topic_edges_normalized.json"
 
 OFFLINE_STEPS = [
     ("Ingestion", [

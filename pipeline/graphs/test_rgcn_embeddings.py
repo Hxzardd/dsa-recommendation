@@ -140,7 +140,7 @@ def _hits_at_k(client, collection, points, k, tag_key):
 
 
 def test_recommendation_quality(client, collection, points, k_list=(10, 20), verbose=False):
-    print(f"\n── 1. Recommendation Quality  ({collection}) ──────────────────")
+    print(f"\n-- 1. Recommendation Quality  ({collection}) ------------------")
     results = []
     sample = points[:200]  # cap at 200 for speed; stratified enough
     for k in k_list:
@@ -190,7 +190,7 @@ def _same_tag_at_k(client, collection, points, tag_key, k=10, n_queries=100):
 
 
 def test_semantic_retrieval(client, collection, points, verbose=False):
-    print(f"\n── 2. Semantic Retrieval  ({collection}) ──────────────────────")
+    print(f"\n-- 2. Semantic Retrieval  ({collection}) ----------------------")
     results = []
     scores = {}
     for tag_key, label in [("topic_tags", "same_topic@10"),
@@ -213,7 +213,7 @@ def test_semantic_retrieval(client, collection, points, verbose=False):
 # ===========================================================================
 
 def test_topic_separation(client, collection, points, verbose=False):
-    print(f"\n── 3. Topic Separation  ({collection}) ────────────────────────")
+    print(f"\n-- 3. Topic Separation  ({collection}) ------------------------")
     by_topic = defaultdict(list)
     for p in points:
         tags = _tag(p, "topic_tags")
@@ -271,7 +271,7 @@ def test_topic_separation(client, collection, points, verbose=False):
 # ===========================================================================
 
 def test_graph_preservation(collection, points):
-    print(f"\n── 4. Graph Preservation  ({collection}) ──────────────────────")
+    print(f"\n-- 4. Graph Preservation  ({collection}) ----------------------")
 
     _npz_path  = C.ARTIFACTS_DIR / "graph_tensors.npz"
     _meta_path = C.ARTIFACTS_DIR / "graph_meta.json"
@@ -365,7 +365,7 @@ def test_graph_preservation(collection, points):
 # ===========================================================================
 
 def test_sanity(client, rgcn_col, full_col, verbose):
-    print(f"\n── 5. Sanity Checks ───────────────────────────────────────────")
+    print(f"\n-- 5. Sanity Checks --------------------------------------------")
     global FULL_DIM
     results = []
 
@@ -467,7 +467,7 @@ def test_sanity(client, rgcn_col, full_col, verbose):
 # ===========================================================================
 
 def compare_baselines(client, rgcn_col, full_col, src_col, points_rgcn, verbose):
-    print(f"\n── BASELINE COMPARISON ────────────────────────────────────────")
+    print(f"\n-- BASELINE COMPARISON ----------------------------------------")
     print(f"  (Does RGCN improve over raw embeddings?)")
 
     # get source points for baseline
@@ -567,7 +567,7 @@ def compare_baselines(client, rgcn_col, full_col, src_col, points_rgcn, verbose)
         improved = r_rgcn > r_src
         improvement_pp = (r_rgcn - r_src) * 100
 
-    print(f"  random (expected)  Precision@10 ≈ {r_rand:.3f}")
+    print(f"  random (expected)  Precision@10 ~= {r_rand:.3f}")
     print(f"  raw QS embedding   Precision@10 = {r_src:.3f}   [{src_col}]")
     print(f"  rgcn_embedding     Precision@10 = {r_rgcn:.3f}   [{'BETTER' if r_rgcn>r_src else 'worse'}]"
           f"  (diagnostic only -- structural signal, not meant to beat QS alone)")

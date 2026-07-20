@@ -1,9 +1,11 @@
 """
 Recommendation controller.
 
-Stateless ML service -- backend sends everything needed in the request,
-ML computes and returns results. No Postgres writes here, read-only
-access to mastery/HLR tables.
+Reads mastery/HLR from Postgres (read-only), and writes one
+recommendation_log row per returned recommendation (the write half of the
+attempt/skip feedback loop -- see database.postgres.db.save_recommendation_log
+and submission_controller.py::handle_update's mark_recommendation_attempted
+for the other half).
 """
 
 import logging
@@ -13,9 +15,13 @@ import psycopg2
 from fastapi import HTTPException
 
 import db_env
-from database.postgres.db import get_user_mastery, get_user_hlr
+from database.postgres.db import (
+    get_connection, release_connection, get_user_mastery, get_user_hlr,
+    save_recommendation_log,
+)
 from pipeline.recommender.services.neo4j_graph_store import Neo4jGraphStore
-from pipeline.recommender.services.recommend import get_recommendations
+from pipeline.recommender.services.recommend import get_recommendations, _get_graph, _resolve_titles
+from pipeline.recommender.services.topic_recommend import recommend_topic, recommend_problems_for_topic
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +95,28 @@ def _get_neo4j_store():
     return _neo4j_store
 
 
+def _get_db_wrapper():
+    """
+    Fresh DBWrapper(psycopg2 connection) per request for UserGraphService's
+    own internal bootstrap read (Submission/RecommendationLog/
+    ConceptGapProfile history, on top of the separate mastery/hlr fetch
+    above) -- DBWrapper already existed in this file but was never wired
+    in (db=None was hardcoded), so this whole read path was silently dead:
+    a user with real Postgres history always built a cold-start graph
+    regardless. None if DATABASE_URL isn't set or the connection fails --
+    UserGraphService already degrades gracefully to a cold-start graph
+    either way, matching the get_user_mastery/get_user_hlr fallback above.
+    Caller must call release_connection() (NOT .close()) on the returned
+    wrapper's .conn when done -- get_connection() now draws from a pool.
+    """
+    try:
+        return DBWrapper(get_connection())
+    except (RuntimeError, psycopg2.Error) as exc:
+        log.warning("Postgres unavailable for UserGraphService bootstrap read (%s: %s)",
+                   exc.__class__.__name__, exc)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Handler
 # ---------------------------------------------------------------------------
@@ -120,12 +148,18 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
     bkt_store = {user_id: mastery}
     hlr_store = {user_id: hlr}
 
-    # db=None -- ML never writes to Postgres. UserGraphService falls back
-    # to new_user_graph() for cold-start users when db is None.
+    # ML never WRITES to Postgres. db_wrapper is a read-only bootstrap
+    # fallback for UserGraphService: if a user has no Redis/Neo4j state
+    # yet, it seeds the graph from their real Submission/RecommendationLog/
+    # ConceptGapProfile rows instead of silently building an empty
+    # cold-start graph for a user who actually has history. None if
+    # DATABASE_URL isn't set or the connection fails -- same graceful
+    # degrade as the mastery/hlr fetch above.
+    db_wrapper = _get_db_wrapper()
     try:
         result = get_recommendations(
             user_id=user_id,
-            db=None,
+            db=db_wrapper,
             redis=None,
             neo4j=_get_neo4j_store(),
             qdrant=_get_qdrant(),
@@ -135,7 +169,21 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
             total_n=max(limit * 3, 30),
             k=limit,
         )
-        return result.to_dict()
+        response = result.to_dict()
+
+        # Write half of the attempt/skip feedback loop -- best-effort:
+        # a logging failure shouldn't turn a successful recommendation
+        # into a 500 for the caller, so this is caught and warned, not
+        # propagated (unlike /update's persistence, which IS the point of
+        # that call -- here the recommendations themselves are still the
+        # actual deliverable even if the log write fails).
+        try:
+            save_recommendation_log(user_id, response.get("recommendations", []))
+        except (RuntimeError, psycopg2.Error) as exc:
+            log.warning("recommendation_log write failed for user %s: %s",
+                       user_id, exc)
+
+        return response
 
     except Exception as exc:
         log.error(
@@ -146,3 +194,112 @@ def handle_recommend(user_id: str, limit: int = 10) -> dict:
             status_code=500,
             detail="Recommendation engine encountered an error",
         )
+    finally:
+        # get_connection() now draws from a ThreadedConnectionPool
+        # (maxconn=10, see database/postgres/db.py) -- .close() closes the
+        # TCP connection but does NOT free the pool's tracked slot, so this
+        # would leak one pool slot on EVERY /recommend call and exhaust the
+        # pool after 10 requests. release_connection() (putconn()) is the
+        # only way to actually return the slot.
+        if db_wrapper is not None:
+            release_connection(db_wrapper.conn)
+
+
+def handle_topic_problem_recommend(user_id: str, topic_id: str, limit: int = 10) -> dict:
+    """
+    Topic-based problem recommendation: caller (backend) already knows
+    which topic it wants ("backend's demand" -- e.g. a topic-picker UI),
+    this returns problems for THAT topic ranked by relevance to the
+    user's own level (BKT mastery on this topic vs each candidate's real
+    Qdrant difficulty_score), not a fixed difficulty band. See
+    topic_recommend.recommend_problems_for_topic's docstring for the
+    relevance formula.
+    """
+    try:
+        mastery = get_user_mastery(user_id) or {}
+        hlr = get_user_hlr(user_id) or {}
+    except (RuntimeError, psycopg2.Error) as exc:
+        log.warning("Postgres unavailable (%s: %s) -- cold-start for user %s",
+                   exc.__class__.__name__, exc, user_id)
+        mastery, hlr = {}, {}
+
+    bkt_store = {user_id: mastery}
+    hlr_store = {user_id: hlr}
+
+    db_wrapper = _get_db_wrapper()
+    try:
+        graph = _get_graph(user_id, db_wrapper, None, _get_neo4j_store(), bkt_store, hlr_store)
+        qdrant = _get_qdrant()
+        candidates = recommend_problems_for_topic(graph, qdrant, COLLECTION, topic_id, n=limit)
+
+        payloads = _resolve_titles([c["problem_id"] for c in candidates], qdrant, COLLECTION)
+        recommendations = [
+            {
+                "problem_id": c["problem_id"],
+                "title": payloads.get(c["problem_id"], {}).get("title"),
+                "title_slug": payloads.get(c["problem_id"], {}).get("title_slug"),
+                "difficulty_score": c["difficulty_score"],
+                "topic_tags": c["topic_tags"],
+                "predicted_success": c["predicted_success"],
+            }
+            for c in candidates
+        ]
+        return {
+            "userId": user_id,
+            "topicId": topic_id,
+            "recommendations": recommendations,
+        }
+    except Exception as exc:
+        log.error(
+            "Topic-based problem recommendation failed for user %s topic %s: %s",
+            user_id, topic_id, exc, exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Topic recommendation engine encountered an error",
+        )
+    finally:
+        if db_wrapper is not None:
+            release_connection(db_wrapper.conn)
+
+
+def handle_topic_recommend(user_id: str) -> dict:
+    """
+    Single best-next-topic recommendation -- "what ONE topic should this
+    user work on next", not a problem list. Builds the same UserGraph
+    handle_recommend does (same mastery/HLR read, same db_wrapper bootstrap
+    fallback), then picks one topic via topic_recommend.recommend_topic
+    instead of running the full 7-pool pipeline -- no Qdrant needed.
+    """
+    try:
+        mastery = get_user_mastery(user_id) or {}
+        hlr = get_user_hlr(user_id) or {}
+    except (RuntimeError, psycopg2.Error) as exc:
+        log.warning("Postgres unavailable (%s: %s) -- cold-start for user %s",
+                   exc.__class__.__name__, exc, user_id)
+        mastery, hlr = {}, {}
+
+    bkt_store = {user_id: mastery}
+    hlr_store = {user_id: hlr}
+
+    db_wrapper = _get_db_wrapper()
+    try:
+        graph = _get_graph(user_id, db_wrapper, None, _get_neo4j_store(), bkt_store, hlr_store)
+        topic_id, reason = recommend_topic(graph)
+        return {
+            "userId": user_id,
+            "topicId": topic_id,
+            "reason": reason,
+        }
+    except Exception as exc:
+        log.error(
+            "Topic recommendation failed for user %s: %s",
+            user_id, exc, exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Topic recommendation engine encountered an error",
+        )
+    finally:
+        if db_wrapper is not None:
+            release_connection(db_wrapper.conn)

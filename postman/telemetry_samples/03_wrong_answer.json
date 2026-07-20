@@ -1,0 +1,14 @@
+{
+  "userId": "postman_demo_user",
+  "problemId": "3sum",
+  "verdict": "WRONG_ANSWER",
+  "hintsUsed": 1,
+  "testCasesPassed": 6,
+  "totalTestCases": 10,
+  "submissionCount": 2,
+  "normalisedScore": 0.5,
+  "problemDifficulty": 0.4,
+  "problemTopics": [
+    { "topicId": "two_pointers", "currentMastery": 0.5, "currentHlr": null }
+  ]
+}

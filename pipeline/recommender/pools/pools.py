@@ -34,7 +34,18 @@ from pipeline.recommender.pools.base_pool import (
 # Matches KNode's difficulty_tier=1 seeded topics ("1=Arrays/Strings" per
 # the schema) -- the two topics every learner starts with regardless of
 # background. Adjust this list if the seeded topic taxonomy changes.
-STARTER_CONCEPTS = ["arrays", "strings", "hash_map", "sorting"]
+#
+# FIX: "arrays"/"strings"/"sorting" are not real tags in
+# data/problem_topic_edges_normalized.json (verified directly: the real
+# manifest uses singular "array"/"string", and there is no generic
+# "sorting" tag at all -- only specific variants like merge_sort/
+# cyclic_sort/counting_sort, each with a handful of problems). With the
+# wrong plural tags, CoursePathPool's cold-start fallback (see below) was
+# effectively only ever matching "hash_map" (118 problems) -- 3 of its 4
+# starter topics silently matched zero problems, badly narrowing the easy-
+# difficulty candidate pool a brand new user's very first recommendation
+# draws from. "array" alone has 790 tagged problems in this catalog.
+STARTER_CONCEPTS = ["array", "string", "hash_map"]
 
 
 class CoursePathPool(BasePool):
@@ -63,19 +74,17 @@ class CoursePathPool(BasePool):
 
         target_concepts = list(dict.fromkeys(in_progress + unlocked))
         if not target_concepts:
-            # Genuinely cold start (no concepts, no unlocks): the old
-            # fallback here read graph.concept_edges, which is empty by
-            # definition for exactly this case -- it always returned
-            # nothing. Fixed to use STARTER_CONCEPTS, but the FIRST fix
-            # still only ever searched EASY_BAND with a single query --
-            # if the dataset simply has few/no easy-difficulty problems
-            # tagged with these starter concepts (common for general
-            # problem manifests), this returned zero even when
-            # medium-difficulty matches existed. Using _draw_with_mix
-            # respects the controller's actual easy/medium/hard split for
-            # this pool, matching every other pool's approach, so it finds
-            # candidates across whatever bands actually have data.
-            return self._draw_with_mix(STARTER_CONCEPTS, n, exclude, mix, graph=graph)
+            # Genuinely cold start (no concepts, no unlocks). Previously used
+            # _draw_with_mix, which filters into a fixed absolute EASY_BAND
+            # (0-0.34) -- but this catalog has ZERO problems below 0.34
+            # difficulty at all (confirmed by direct query), so the "easy"
+            # quota always came back empty and cold-start users landed on
+            # medium/hard instead. "Lowest possible difficulty" for a
+            # catalog like this has to mean relative-lowest, not
+            # absolute-lowest -- so cold start ranks by actual
+            # difficulty_score ascending and takes the n lowest available,
+            # rather than filtering into a band that may not exist.
+            return self._lowest_difficulty_by_concept(STARTER_CONCEPTS, n, exclude, graph=graph)
         return self._draw_with_mix(target_concepts, n, exclude, mix, graph=graph)
 
 
@@ -225,10 +234,14 @@ class NoveltyPool(BasePool):
             # than returning nothing. Excludes anything already in the
             # user's graph so this doesn't just duplicate CoursePathPool's
             # fallback for a user who has SOME data but no mastered concepts.
+            # Same catalog-difficulty-floor issue as CoursePathPool's
+            # cold-start branch (see _lowest_difficulty_by_concept's
+            # docstring) -- ranks by actual difficulty_score instead of a
+            # fixed EASY_BAND this catalog has no data in.
             fallback = [c for c in STARTER_CONCEPTS if c not in seen]
             if not fallback:
                 return []
-            return self._draw_with_mix(fallback, n, exclude, mix, graph=graph)
+            return self._lowest_difficulty_by_concept(fallback, n, exclude, graph=graph)
         return self._draw_with_mix(novel, n, exclude, mix, graph=graph)
 
 
