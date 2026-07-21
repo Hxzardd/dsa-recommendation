@@ -58,6 +58,33 @@ def _ml_slug_to_topic_id(conn, ml_slug: str) -> str | None:
     return _topic_id_by_slug.get(topic_slug)
 
 
+def _resolve_topic_id(conn, key: str) -> str | None:
+    """Two calling conventions reach save_user_mastery_live/save_user_hlr
+    with the same dict shape but different key semantics:
+
+      - submission_controller.py::handle_update passes through whatever
+        `topicId` the backend sent in problemTopics -- per the documented
+        Submission contract (models/schemas/submission.py) that IS already
+        a backend `topic.id`, not an ML slug. Feeding a topic.id into
+        _ml_slug_to_topic_id's slug lookup never matches (a CUID is never
+        in CANONICAL_TAGS/_LEGACY_TAG_MAP), silently no-opping every write
+        for this caller.
+      - seeding_controller.py passes genuine ML/CF-LC tag slugs (e.g.
+        "dynamic_programming"), which DO need the slug->topic_id
+        translation below.
+
+    Try the key as a topic.id first (cheap dict lookup against the same
+    cache _ml_slug_to_topic_id already loads); only fall back to slug
+    translation if it isn't one. A real topic.id is never a valid slug
+    string and vice versa, so this is unambiguous."""
+    global _topic_slug_by_id
+    if _topic_slug_by_id is None:
+        _load_topic_cache(conn)
+    if key in _topic_slug_by_id:
+        return key
+    return _ml_slug_to_topic_id(conn, key)
+
+
 def _topic_id_to_ml_slug(conn, topic_id: str) -> str | None:
     """Reverse of _ml_slug_to_topic_id -- topic.id -> ML pipeline slug, so
     values read back out of user_topic_mastery/user_hlr_state are usable
@@ -148,15 +175,17 @@ def get_user_hlr(user_id: str) -> dict:
 
 
 def save_user_hlr(user_id: str, hlr_state: dict):
-    """hlr_state is keyed by ML pipeline slug (e.g. "array"); translated to
-    the backend's topic.id via topic_taxonomy before writing (see
-    _ml_slug_to_topic_id). Topics with no backend counterpart are skipped --
-    there is no row to write to."""
+    """hlr_state has two possible key conventions depending on the caller:
+    submission_controller.py::handle_update (live submissions) keys it by
+    the backend's own topic.id already; seeding_controller.py (CF/LC
+    import) keys it by ML pipeline slug (e.g. "array"), translated to the
+    backend's topic.id via topic_taxonomy (see _resolve_topic_id). Topics
+    with no backend counterpart are skipped -- there is no row to write to."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            for ml_slug, state in hlr_state.items():
-                topic_id = _ml_slug_to_topic_id(conn, ml_slug)
+            for key, state in hlr_state.items():
+                topic_id = _resolve_topic_id(conn, key)
                 if topic_id is None:
                     continue
                 cur.execute("""
@@ -216,14 +245,20 @@ def save_user_mastery_live(user_id: str, mastery: dict):
     (CF/LC one-time import, ON CONFLICT DO NOTHING so it never clobbers
     real in-platform progress), this MUST overwrite on every call: it's
     the new P(L) after this exact submission, and mastery is meant to be
-    the single source of truth for that going forward. Same topic-id
-    translation as save_user_mastery -- see topic_taxonomy.py.
+    the single source of truth for that going forward.
+
+    `mastery`'s keys come straight from handle_update's problemTopics ->
+    process_submission round-trip, which per the Submission contract
+    (models/schemas/submission.py) are already the backend's own topic.id
+    values, not ML slugs -- _resolve_topic_id checks that directly instead
+    of assuming ML-slug translation (see its docstring for why this
+    previously no-opped every write for this caller).
     """
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            for ml_slug, mastery_score in mastery.items():
-                topic_id = _ml_slug_to_topic_id(conn, ml_slug)
+            for key, mastery_score in mastery.items():
+                topic_id = _resolve_topic_id(conn, key)
                 if topic_id is None:
                     continue
                 cur.execute("""
