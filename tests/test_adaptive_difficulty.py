@@ -204,10 +204,29 @@ class TestColdStart(unittest.TestCase):
         weights = {p: plan.weight_of(p) for p in POOLS}
         self.assertEqual(max(weights, key=weights.get), "A")
 
-    def test_no_solves_is_cold_even_with_concepts(self):
+    def test_seeded_user_with_no_platform_solves_is_not_cold_start(self):
+        """
+        Regression test: a user with imported LeetCode/Codeforces history
+        (seeding_controller.py) has real concept_edges (mastery/HLR seeded
+        from external history) but zero solved_ids -- solved_ids is
+        populated exclusively from the platform `submission` table
+        (UserGraphService._load_submissions), which seeding never touches.
+        Such a user must NOT be classified cold-start: they have real
+        per-topic mastery signal to build a level-appropriate plan from,
+        even though they've never submitted anything on this platform yet.
+        """
         g = _graph([_concept("arrays", mastery=0.5)], solved=None)
         plan = build_difficulty_plan(g, now=NOW)
-        self.assertTrue(plan.is_cold_start)
+        self.assertFalse(plan.is_cold_start)
+
+    def test_seeded_user_gets_level_appropriate_weights_not_cold_start_weights(self):
+        """A seeded user's pool weights should reflect their actual seeded
+        mastery level (here: mid, since 0.5 is between LOW_MASTERY and
+        HIGH_MASTERY), not the cold-start weight table."""
+        g = _graph([_concept("arrays", mastery=0.5)], solved=None)
+        plan = build_difficulty_plan(g, now=NOW)
+        self.assertEqual(plan.level, "mid")
+        self.assertFalse(plan.is_cold_start)
 
     def test_true_cold_start_mix_is_extremely_easy_weighted(self):
         """A user's very first-ever recommendations should require
