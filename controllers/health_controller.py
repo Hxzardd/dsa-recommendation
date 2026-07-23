@@ -59,18 +59,38 @@ log = logging.getLogger(__name__)
 # while every dependency is actually healthy.
 #
 # Two mechanisms prevent that:
-#   1. TTL cache  -- a result is reused for _CACHE_TTL seconds, so a probe
+#   1. TTL cache     -- a result is reused for _CACHE_TTL seconds, so a probe
 #      every second costs one real check every _CACHE_TTL seconds.
-#   2. Single-flight -- only ONE thread ever runs the checks at a time. Others
-#      immediately serve the last known result instead of queueing (bounded
-#      staleness beats unbounded pile-up). Only the very first call, with no
-#      cached result to fall back on, waits for the in-flight check.
+#   2. Single-flight, NEVER BLOCKING -- only ONE thread ever runs the checks
+#      at a time, via a non-blocking lock acquire. Every other caller gets an
+#      answer IMMEDIATELY: the last known result if one exists (bounded
+#      staleness beats waiting), or an honest "starting" 503 if nothing has
+#      ever been cached yet. No caller ever blocks waiting for the lock.
+#
+#      This matters because these are sync FastAPI handlers: they execute on
+#      the SAME shared thread pool authenticated requests and the auth
+#      middleware's session lookup also run on. A thread parked waiting on
+#      `lock.acquire(blocking=True)` is a worker authenticated traffic can't
+#      use -- under a burst of concurrent unauthenticated probes (exactly the
+#      case a monitoring tool or several overlapping Render checks would
+#      produce), that pile-up degrades real requests even though every
+#      dependency is healthy. A blocking acquire here would reproduce the
+#      exact class of bug this module exists to prevent, just moved from the
+#      Postgres pool to the ASGI thread pool.
 #
 # Together these cap health-check load at a single Postgres connection and a
-# single Qdrant/Neo4j round trip at any instant, no matter the probe rate.
+# single Qdrant/Neo4j round trip at any instant, no matter the probe rate,
+# WITHOUT ever parking a thread-pool worker on a wait.
 _CACHE_TTL = 5.0          # seconds; well under any sane probe interval
 _cache_lock = threading.Lock()
 _cached: tuple | None = None      # (expires_at_monotonic, body, ready)
+
+# Returned (uncached, ready=False -> 503) when a caller arrives while the
+# very first check is still in flight and nothing has EVER been cached --
+# i.e. we genuinely don't know yet. Honest and fast beats blocking to find
+# out: Render already retries a failed probe, and this state clears itself
+# within one _CACHE_TTL-scale window regardless.
+_STARTING_STATUS = "starting"
 
 # Dependencies whose failure means the service genuinely cannot serve traffic
 # and readiness must report unhealthy (HTTP 503).
@@ -259,13 +279,15 @@ def handle_health() -> tuple[dict, bool]:
     but ready=True (still 200): the service can serve, just without that
     tier.
 
-    Each dependency reports {"status", "detail"}; the detail names the exact
-    missing table/collection so a red health check is directly actionable
-    from the Render dashboard instead of just "down".
+    Each dependency reports {"status", "reason"}; a "starting" status/503
+    means a check is already in flight and nothing has been cached yet (only
+    possible in the first ~_CACHE_TTL seconds after process start) -- ask
+    again shortly rather than reading it as a real dependency failure.
 
-    Results are cached for _CACHE_TTL seconds and refreshed single-flight --
-    see the module header for why an unauthenticated probe must never run its
-    dependency sequence per-request.
+    Results are cached for _CACHE_TTL seconds and refreshed single-flight,
+    via a NON-BLOCKING lock acquire only -- see the module header for why a
+    caller here must never wait: this runs on the same shared thread pool as
+    authenticated request handlers.
     """
     global _cached
 
@@ -274,14 +296,27 @@ def handle_health() -> tuple[dict, bool]:
     if cached is not None and now < cached[0]:
         return cached[1], cached[2]
 
-    # Stale (or absent). Exactly one thread refreshes; the rest serve the
-    # last known result rather than piling onto the connection pool. With no
-    # cached result at all (first-ever call) we must wait for a real answer.
-    if not _cache_lock.acquire(blocking=cached is None):
-        return cached[1], cached[2]
+    # Stale or absent. Try to become the single refresher -- but NEVER block
+    # waiting for the lock; a parked thread here is a thread-pool worker
+    # authenticated traffic can't use.
+    if not _cache_lock.acquire(blocking=False):
+        # Someone else is already refreshing. Serve the last known result --
+        # stale-but-known beats occupying a shared worker thread to wait for
+        # a fresher one.
+        if cached is not None:
+            return cached[1], cached[2]
+        # Nothing has EVER been cached (process just started, and another
+        # thread already claimed the very first check) -- say so honestly
+        # and return immediately rather than guessing or waiting.
+        return {
+            "status": _STARTING_STATUS,
+            "service": "recommendation",
+            "dependencies": {},
+        }, False
 
     try:
-        # Re-check: another thread may have refreshed while we waited.
+        # Re-check: another thread may have refreshed between our first
+        # cache read above and acquiring the lock.
         cached = _cached
         now = time.monotonic()
         if cached is not None and now < cached[0]:

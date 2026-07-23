@@ -159,18 +159,88 @@ class TestProbeThrottling(unittest.TestCase):
         with self._counting_probes(delay=0.25) as calls:
             results = []
             threads = [threading.Thread(
-                target=lambda: results.append(hc.handle_health()[1]))
+                target=lambda: results.append(hc.handle_health()))
                 for _ in range(15)]
             [t.start() for t in threads]
             [t.join() for t in threads]
 
         self.assertEqual(len(results), 15)
-        self.assertTrue(all(results), "every probe should get a verdict")
         self.assertEqual(
             calls["n"], 1,
             f"15 concurrent probes triggered {calls['n']} dependency "
             f"sequences -- each one borrows from the shared 10-connection "
             f"Postgres pool, so this must be 1")
+        # With no cache yet, exactly one caller does the real (slow) check;
+        # everyone else gets an immediate, honest "starting" verdict rather
+        # than the real result -- see test_no_caller_ever_blocks_on_the_lock
+        # for why that's correct instead of a regression.
+        readies = [ready for _, ready in results]
+        self.assertIn(True, readies, "the one real check should have succeeded")
+        statuses = {body["status"] for body, _ in results}
+        self.assertTrue(statuses <= {"ok", hc._STARTING_STATUS})
+
+    def test_no_caller_ever_blocks_on_the_lock(self):
+        """
+        The exact bug being fixed: these are sync handlers dispatched to
+        FastAPI's shared thread pool -- the same pool authenticated requests
+        and the auth middleware's session lookup use. A thread parked
+        waiting for this lock is a worker real traffic can't use. With no
+        cache yet, every caller except the one refreshing must return
+        near-instantly, not after the slow check completes.
+        """
+        with self._counting_probes(delay=0.3):
+            elapsed = []
+            lock = threading.Lock()
+
+            def hit():
+                t0 = time.perf_counter()
+                hc.handle_health()
+                dt = time.perf_counter() - t0
+                with lock:
+                    elapsed.append(dt)
+
+            threads = [threading.Thread(target=hit) for _ in range(10)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+
+        elapsed.sort()
+        # At most ONE caller (the refresher) should take close to the full
+        # 0.3s delay; every other caller must return almost immediately.
+        fast = [d for d in elapsed if d < 0.1]
+        self.assertGreaterEqual(
+            len(fast), len(elapsed) - 1,
+            f"expected at most 1 caller to block on the real check, got "
+            f"timings {[round(d, 3) for d in elapsed]} -- callers are "
+            f"waiting on the lock instead of returning immediately")
+
+    def test_no_cache_and_check_in_flight_returns_starting_not_blocking(self):
+        """First-ever call takes the lock and starts a slow check; a second
+        caller arriving while it's in flight, with nothing cached yet, must
+        get an immediate 'starting' 503 rather than wait for the result."""
+        release_refresher = threading.Event()
+
+        def slow_pg():
+            release_refresher.wait(timeout=5)
+            return ("ok", "ready", "d")
+
+        with patch.object(hc, "_check_postgres", side_effect=slow_pg), \
+             patch.object(hc, "_check_qdrant", return_value=("ok", "ready", "d")), \
+             patch.object(hc, "_check_neo4j", return_value=("ok", "ready", "d")):
+            refresher = threading.Thread(target=hc.handle_health)
+            refresher.start()
+            time.sleep(0.05)   # let it claim the lock and start the real check
+
+            t0 = time.perf_counter()
+            body, ready = hc.handle_health()
+            dt = time.perf_counter() - t0
+
+            release_refresher.set()
+            refresher.join()
+
+        self.assertLess(dt, 0.2, "second caller must not wait for the refresh")
+        self.assertFalse(ready)
+        self.assertEqual(body["status"], hc._STARTING_STATUS)
+        self.assertEqual(body["dependencies"], {})
 
     def test_cache_expires_so_a_real_outage_is_noticed(self):
         with self._counting_probes() as calls:
