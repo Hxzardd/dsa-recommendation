@@ -11,6 +11,8 @@ from database.postgres.db import get_connection, release_connection
 
 PUBLIC_PATHS = {
     "/",
+    "/health",   # readiness probe -- platform health checks carry no token
+    "/live",     # liveness probe  -- dependency-free process-up ping
     "/docs",
     "/openapi.json",
     "/redoc",

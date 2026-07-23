@@ -436,13 +436,15 @@ class UserGraphService:
                 self._add_topic_mastery_edge(
                     graph, topic_id, mastery_score, confidence, last_attempted,
                     sm2_ef, sm2_interval, next_review_date, bkt_user, hlr_user,
+                    attempt_count=attempt_count, problems_solved=problems_solved,
                 )
         finally:
             release_connection(topic_conn)
 
     def _add_topic_mastery_edge(self, graph, topic_id, mastery_score, confidence,
                                 last_attempted, sm2_ef, sm2_interval,
-                                next_review_date, bkt_user, hlr_user) -> None:
+                                next_review_date, bkt_user, hlr_user,
+                                attempt_count=0, problems_solved=0) -> None:
         # BKT P(L) from Shraddha's online store takes precedence.
         # user_topic_mastery.mastery_score is ALREADY 0-1 in the real
         # schema (confirmed against a live instance of this backend
@@ -496,6 +498,13 @@ class UserGraphService:
             sm2_interval=int(sm2_interval or 1),
             next_review_date=nrd_str,
             last_attempted=ts_last,
+            # Imported per-topic activity -- the personalization signal for
+            # functionally-cold users whose mastery landed on the flat floor.
+            # Previously SELECTed by _load_topic_mastery but dropped on the
+            # floor here, so two import users with very different histories
+            # built identical-looking graphs and got the same common path.
+            problems_solved=int(problems_solved or 0),
+            attempt_count=int(attempt_count or 0),
         )
         graph.add_concept_edge(edge)
 
