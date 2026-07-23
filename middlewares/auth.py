@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from psycopg2.extras import RealDictCursor
+from starlette.concurrency import run_in_threadpool
 
 from database.postgres.db import get_connection, release_connection
 
@@ -119,7 +120,13 @@ async def auth_middleware(request: Request, call_next):
 
     request.state.is_service_call = False
     try:
-        request.state.user_id = verify_session_token(token)
+        # verify_session_token does a BLOCKING pooled psycopg2 query. HTTP
+        # middleware always runs on the event loop (unlike a sync route
+        # handler, which FastAPI dispatches to its thread pool), so calling it
+        # directly would stall the loop on EVERY authenticated request for the
+        # length of a Postgres round trip -- serialising all concurrent
+        # traffic behind one DB call. run_in_threadpool moves it off the loop.
+        request.state.user_id = await run_in_threadpool(verify_session_token, token)
     except HTTPException as e:
         return JSONResponse(
             status_code=e.status_code,

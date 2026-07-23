@@ -88,6 +88,65 @@ class _EndpointCase(unittest.TestCase):
         return {"Authorization": f"Bearer {TOKEN}"}
 
 
+@unittest.skipUnless(_AVAILABLE, _REASON)
+class TestHandlersDoNotBlockTheEventLoop(unittest.TestCase):
+    """
+    Every handler below performs BLOCKING I/O (pooled psycopg2 queries,
+    Qdrant HTTP, Neo4j bolt). FastAPI runs `async def` handlers directly on
+    the event loop and dispatches plain `def` handlers to a thread pool -- so
+    any of these declared `async` would stall all concurrent traffic for the
+    duration of its slowest dependency, and make the health probe time out on
+    itself under load.
+
+    This is a structural guard, not a convention: re-adding `async` to any of
+    them fails here immediately.
+    """
+
+    BLOCKING_HANDLERS = (
+        ("main", "root"),
+        ("routes.recommendation", "recommend"),
+        ("routes.recommendation", "topic_recommend"),
+        ("routes.recommendation", "topic_problem_recommend"),
+        ("routes.health", "health"),
+        ("routes.mastery", "get_mastery"),
+        ("routes.mastery", "get_urgency"),
+        ("routes.submission", "update_endpoint"),
+        ("routes.seeding", "seed_bkt"),
+        ("routes.seeding", "seed_hlr"),
+    )
+
+    def test_blocking_handlers_are_sync_so_fastapi_threadpools_them(self):
+        import importlib
+        import inspect
+        for module_name, func_name in self.BLOCKING_HANDLERS:
+            mod = importlib.import_module(module_name)
+            fn = getattr(mod, func_name)
+            self.assertFalse(
+                inspect.iscoroutinefunction(fn),
+                f"{module_name}.{func_name} is `async def` but does blocking "
+                f"I/O -- it would run on the event loop and stall every other "
+                f"request. Declare it `def` so FastAPI dispatches it to the "
+                f"thread pool.")
+
+    def test_auth_middleware_offloads_its_blocking_db_call(self):
+        """The middleware must stay async (ASGI contract), so its blocking
+        session lookup has to be pushed to a thread pool explicitly."""
+        import ast
+        import inspect
+        source = inspect.getsource(auth_mod.auth_middleware)
+        tree = ast.parse(source.lstrip())
+        calls = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        self.assertIn(
+            "run_in_threadpool", calls,
+            "auth_middleware calls verify_session_token (blocking psycopg2) "
+            "directly on the event loop -- every authenticated request would "
+            "serialise behind it. Wrap it in run_in_threadpool.")
+
+
 class TestHealthEndpoints(_EndpointCase):
 
     def test_live_is_always_200_without_touching_dependencies(self):

@@ -53,12 +53,19 @@ def _load_offline_concept_graph():
 
 
 @app.get("/")
-async def root():
+def root():
     """
     Readiness check, NOT a static 200. Render (and any other platform) is
     commonly pointed at the root path for its health check; returning a
     hardcoded 200 here meant the service was reported healthy even when
     Postgres/Qdrant were unreachable and every real request was failing.
+
+    Deliberately `def`, not `async def`: handle_health() performs BLOCKING
+    dependency I/O (psycopg2, Qdrant HTTP, Neo4j bolt). An async handler runs
+    directly on the event loop, so a slow dependency would stall every other
+    in-flight request AND make this probe time out on itself. A sync handler
+    is dispatched to FastAPI's thread pool, keeping the loop free. Same
+    reasoning as routes/health.py's /health.
 
     This now runs the same dependency probe as /health and returns 503 when a
     CRITICAL dependency (Postgres, Qdrant) is down, so the platform stops
