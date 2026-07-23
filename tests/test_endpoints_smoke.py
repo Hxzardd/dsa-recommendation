@@ -149,6 +149,14 @@ class TestHandlersDoNotBlockTheEventLoop(unittest.TestCase):
 
 class TestHealthEndpoints(_EndpointCase):
 
+    def setUp(self):
+        # Readiness results are cached (see health_controller's throttle), so
+        # a previous test's verdict would otherwise leak into this one.
+        import controllers.health_controller as hc
+        hc.reset_health_cache()
+
+    tearDown = setUp
+
     def test_live_is_always_200_without_touching_dependencies(self):
         with self._client() as c:
             r = c.get("/live")
@@ -158,9 +166,9 @@ class TestHealthEndpoints(_EndpointCase):
     def test_root_and_health_report_ready_when_dependencies_are_up(self):
         import controllers.health_controller as hc
         with self._client() as c, \
-             patch.object(hc, "_check_postgres", return_value=("ok", "")), \
-             patch.object(hc, "_check_qdrant", return_value=("ok", "")), \
-             patch.object(hc, "_check_neo4j", return_value=("ok", "")):
+             patch.object(hc, "_check_postgres", return_value=("ok", "ready", "d")), \
+             patch.object(hc, "_check_qdrant", return_value=("ok", "ready", "d")), \
+             patch.object(hc, "_check_neo4j", return_value=("ok", "ready", "d")):
             for path in ("/", "/health"):
                 r = c.get(path)
                 self.assertEqual(r.status_code, 200, path)
@@ -169,9 +177,9 @@ class TestHealthEndpoints(_EndpointCase):
     def test_root_and_health_return_503_when_a_critical_dependency_is_down(self):
         import controllers.health_controller as hc
         with self._client() as c, \
-             patch.object(hc, "_check_postgres", return_value=("down", "boom")), \
-             patch.object(hc, "_check_qdrant", return_value=("ok", "")), \
-             patch.object(hc, "_check_neo4j", return_value=("ok", "")):
+             patch.object(hc, "_check_postgres", return_value=("down", "unreachable", "boom")), \
+             patch.object(hc, "_check_qdrant", return_value=("ok", "ready", "d")), \
+             patch.object(hc, "_check_neo4j", return_value=("ok", "ready", "d")):
             for path in ("/", "/health"):
                 r = c.get(path)
                 self.assertEqual(r.status_code, 503, path)

@@ -22,6 +22,9 @@ Run:
 
 from __future__ import annotations
 
+import contextlib
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -31,10 +34,15 @@ from controllers import health_controller as hc
 class TestReadinessAggregation(unittest.TestCase):
     """handle_health() maps per-dependency states to an overall verdict."""
 
+    def setUp(self):
+        hc.reset_health_cache()
+
+    tearDown = setUp
+
     def _run(self, postgres, qdrant, neo4j):
-        with patch.object(hc, "_check_postgres", return_value=(postgres, "")), \
-             patch.object(hc, "_check_qdrant", return_value=(qdrant, "")), \
-             patch.object(hc, "_check_neo4j", return_value=(neo4j, "")):
+        with patch.object(hc, "_check_postgres", return_value=(postgres, "r", "d")), \
+             patch.object(hc, "_check_qdrant", return_value=(qdrant, "r", "d")), \
+             patch.object(hc, "_check_neo4j", return_value=(neo4j, "r", "d")):
             return hc.handle_health()
 
     def _statuses(self, body):
@@ -73,14 +81,116 @@ class TestReadinessAggregation(unittest.TestCase):
         self.assertEqual(body["status"], "ok",
                          "Neo4j not configured is a normal, healthy state")
 
-    def test_body_exposes_actionable_detail_per_dependency(self):
+    def test_body_reports_a_coarse_reason_per_dependency(self):
         with patch.object(hc, "_check_postgres",
-                          return_value=("down", "missing table(s): session")), \
-             patch.object(hc, "_check_qdrant", return_value=("ok", "fine")), \
-             patch.object(hc, "_check_neo4j", return_value=("ok", "fine")):
+                          return_value=("down", "missing_tables", "missing table(s): session")), \
+             patch.object(hc, "_check_qdrant", return_value=("ok", "ready", "fine")), \
+             patch.object(hc, "_check_neo4j", return_value=("ok", "ready", "fine")):
             body, ready = hc.handle_health()
         self.assertFalse(ready)
-        self.assertIn("session", body["dependencies"]["postgres"]["detail"])
+        self.assertEqual(body["dependencies"]["postgres"]["reason"],
+                         "missing_tables")
+
+    def test_response_never_leaks_internal_detail_to_anonymous_callers(self):
+        """/ and /health are unauthenticated. Raw driver exception text embeds
+        hostnames and connection parameters, and table/collection names map
+        out the infrastructure -- all of that belongs in the logs, not in a
+        body any anonymous caller can read."""
+        import json
+        secret = "host=prod-db.internal password=hunter2"
+        with patch.object(hc, "_check_postgres",
+                          return_value=("down", "unreachable", secret)), \
+             patch.object(hc, "_check_qdrant",
+                          return_value=("down", "missing_collection", secret)), \
+             patch.object(hc, "_check_neo4j",
+                          return_value=("down", "unreachable", secret)):
+            body, _ = hc.handle_health()
+
+        serialised = json.dumps(body)
+        for leak in ("prod-db.internal", "hunter2", "password"):
+            self.assertNotIn(leak, serialised,
+                             f"health response leaked {leak!r} to an "
+                             f"unauthenticated caller")
+        for dep in body["dependencies"].values():
+            self.assertNotIn("detail", dep)
+
+
+class TestProbeThrottling(unittest.TestCase):
+    """
+    / and /health are unauthenticated, so probe volume is not under our
+    control. The dependency sequence must NOT run per-request: the Postgres
+    pool is shared with real traffic and only has maxconn=10, so unthrottled
+    probes could exhaust it and fail live requests while every dependency is
+    actually healthy.
+    """
+
+    def setUp(self):
+        hc.reset_health_cache()
+
+    tearDown = setUp
+
+    @contextlib.contextmanager
+    def _counting_probes(self, delay=0.0):
+        """Counts how many times the real dependency sequence executes."""
+        calls = {"n": 0}
+
+        def _pg():
+            calls["n"] += 1
+            if delay:
+                time.sleep(delay)
+            return ("ok", "ready", "d")
+
+        with patch.object(hc, "_check_postgres", side_effect=_pg), \
+             patch.object(hc, "_check_qdrant", return_value=("ok", "ready", "d")), \
+             patch.object(hc, "_check_neo4j", return_value=("ok", "ready", "d")):
+            yield calls
+
+    def test_repeated_probes_within_ttl_run_the_checks_once(self):
+        with self._counting_probes() as calls:
+            for _ in range(25):
+                body, ready = hc.handle_health()
+                self.assertTrue(ready)
+        self.assertEqual(calls["n"], 1,
+                         "25 sequential probes must collapse to ONE real check")
+
+    def test_concurrent_probes_do_not_stack_up_on_the_pool(self):
+        """The pool-exhaustion case: many probes landing at once must still
+        result in a single in-flight dependency sequence."""
+        with self._counting_probes(delay=0.25) as calls:
+            results = []
+            threads = [threading.Thread(
+                target=lambda: results.append(hc.handle_health()[1]))
+                for _ in range(15)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+
+        self.assertEqual(len(results), 15)
+        self.assertTrue(all(results), "every probe should get a verdict")
+        self.assertEqual(
+            calls["n"], 1,
+            f"15 concurrent probes triggered {calls['n']} dependency "
+            f"sequences -- each one borrows from the shared 10-connection "
+            f"Postgres pool, so this must be 1")
+
+    def test_cache_expires_so_a_real_outage_is_noticed(self):
+        with self._counting_probes() as calls:
+            hc.handle_health()
+            self.assertEqual(calls["n"], 1)
+            with patch.object(hc, "_CACHE_TTL", 0.0):
+                hc.reset_health_cache()
+                hc.handle_health()
+        self.assertEqual(calls["n"], 2, "an expired cache must re-probe")
+
+    def test_status_flip_is_picked_up_after_the_cache_expires(self):
+        with patch.object(hc, "_check_qdrant", return_value=("ok", "ready", "d")), \
+             patch.object(hc, "_check_neo4j", return_value=("ok", "ready", "d")):
+            with patch.object(hc, "_check_postgres", return_value=("ok", "ready", "d")):
+                _, ready = hc.handle_health()
+                self.assertTrue(ready)
+            hc.reset_health_cache()
+            with patch.object(hc, "_check_postgres", return_value=("down", "unreachable", "x")):
+                _, ready = hc.handle_health()
+                self.assertFalse(ready, "outage must surface once cache clears")
 
 
 class TestPostgresProbe(unittest.TestCase):
@@ -98,7 +208,7 @@ class TestPostgresProbe(unittest.TestCase):
     def test_ok_when_all_required_tables_present(self):
         released = {}
         conn = _FakeConn(present=set(hc.REQUIRED_TABLES))
-        status, detail = self._run_with(conn, released)
+        status, reason, detail = self._run_with(conn, released)
         self.assertEqual(status, "ok")
         self.assertIs(released.get("conn"), conn,
                       "connection must be returned to the pool")
@@ -108,14 +218,14 @@ class TestPostgresProbe(unittest.TestCase):
         authenticated request while the probe reported healthy."""
         released = {}
         present = set(hc.REQUIRED_TABLES) - {"session"}
-        status, detail = self._run_with(_FakeConn(present=present), released)
+        status, reason, detail = self._run_with(_FakeConn(present=present), released)
         self.assertEqual(status, "down")
         self.assertIn("session", detail)
 
     def test_down_lists_every_missing_table(self):
         released = {}
         present = set(hc.REQUIRED_TABLES) - {"topic", "user_topic_mastery"}
-        status, detail = self._run_with(_FakeConn(present=present), released)
+        status, reason, detail = self._run_with(_FakeConn(present=present), released)
         self.assertEqual(status, "down")
         self.assertIn("topic", detail)
         self.assertIn("user_topic_mastery", detail)
@@ -123,7 +233,7 @@ class TestPostgresProbe(unittest.TestCase):
     def test_down_when_query_raises_and_connection_still_released(self):
         released = {}
         conn = _FakeConn(raise_on_execute=True)
-        status, _ = self._run_with(conn, released)
+        status, reason, detail = self._run_with(conn, released)
         self.assertEqual(status, "down")
         self.assertIs(released.get("conn"), conn,
                       "a failed probe must not leak the pooled connection")
@@ -131,7 +241,7 @@ class TestPostgresProbe(unittest.TestCase):
     def test_down_when_get_connection_raises(self):
         with patch("database.postgres.db.get_connection",
                    side_effect=RuntimeError("pool exhausted")):
-            status, detail = hc._check_postgres()
+            status, reason, detail = hc._check_postgres()
         self.assertEqual(status, "down")
         self.assertIn("pool exhausted", detail)
 
@@ -147,33 +257,33 @@ class TestQdrantProbe(unittest.TestCase):
             return hc._check_qdrant()
 
     def test_ok_when_collection_exists_and_is_populated(self):
-        status, detail = self._run(_FakeQdrant(exists=True, count=1158))
+        status, reason, detail = self._run(_FakeQdrant(exists=True, count=1158))
         self.assertEqual(status, "ok")
         self.assertIn("problems_full", detail)
 
     def test_down_when_configured_collection_is_missing(self):
         """Reachable Qdrant, wrong/absent collection -> every /recommend
         returns an empty slate, so readiness must fail."""
-        status, detail = self._run(_FakeQdrant(exists=False))
+        status, reason, detail = self._run(_FakeQdrant(exists=False))
         self.assertEqual(status, "down")
         self.assertIn("problems_full", detail)
         self.assertIn("not found", detail)
 
     def test_down_when_collection_is_empty(self):
-        status, detail = self._run(_FakeQdrant(exists=True, count=0))
+        status, reason, detail = self._run(_FakeQdrant(exists=True, count=0))
         self.assertEqual(status, "down")
         self.assertIn("empty", detail)
 
     def test_down_when_client_raises(self):
-        status, detail = self._run(_FakeQdrant(raises=True))
+        status, reason, detail = self._run(_FakeQdrant(raises=True))
         self.assertEqual(status, "down")
         self.assertIn("ConnectionError", detail)
 
     def test_falls_back_to_get_collections_on_older_client(self):
         """Clients without collection_exists() still get a correct verdict."""
-        status, _ = self._run(_LegacyQdrant(names=["problems_full"], count=42))
+        status, reason, detail = self._run(_LegacyQdrant(names=["problems_full"], count=42))
         self.assertEqual(status, "ok")
-        status, detail = self._run(_LegacyQdrant(names=["something_else"]))
+        status, reason, detail = self._run(_LegacyQdrant(names=["something_else"]))
         self.assertEqual(status, "down")
         self.assertIn("not found", detail)
 
@@ -181,28 +291,28 @@ class TestQdrantProbe(unittest.TestCase):
 class TestNeo4jProbe(unittest.TestCase):
     def test_disabled_when_no_password_configured(self):
         with patch.object(hc.db_env, "NEO4J_PASSWORD", None):
-            status, _ = hc._check_neo4j()
+            status, reason, detail = hc._check_neo4j()
         self.assertEqual(status, "disabled")
 
     def test_down_when_configured_but_store_not_enabled(self):
         with patch.object(hc.db_env, "NEO4J_PASSWORD", "secret"), \
              patch("controllers.recommendation_controller._get_neo4j_store",
                    return_value=_FakeStore(enabled=False)):
-            status, _ = hc._check_neo4j()
+            status, reason, detail = hc._check_neo4j()
         self.assertEqual(status, "down")
 
     def test_ok_when_store_pings(self):
         with patch.object(hc.db_env, "NEO4J_PASSWORD", "secret"), \
              patch("controllers.recommendation_controller._get_neo4j_store",
                    return_value=_FakeStore(enabled=True, ping=True)):
-            status, _ = hc._check_neo4j()
+            status, reason, detail = hc._check_neo4j()
         self.assertEqual(status, "ok")
 
     def test_down_when_store_ping_fails(self):
         with patch.object(hc.db_env, "NEO4J_PASSWORD", "secret"), \
              patch("controllers.recommendation_controller._get_neo4j_store",
                    return_value=_FakeStore(enabled=True, ping=False)):
-            status, _ = hc._check_neo4j()
+            status, reason, detail = hc._check_neo4j()
         self.assertEqual(status, "down")
 
 

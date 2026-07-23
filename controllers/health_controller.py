@@ -39,10 +39,38 @@ opened.
 """
 
 import logging
+import threading
+import time
 
 import db_env
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Probe throttling
+# ---------------------------------------------------------------------------
+# / and /health are UNAUTHENTICATED by necessity (a platform probe carries no
+# session token), so anyone -- or a misconfigured monitor, or several Render
+# probes overlapping -- can drive them at arbitrary rate. Running the full
+# Postgres+Qdrant+Neo4j sequence per request would let readiness traffic
+# consume the very capacity it is meant to be reporting on: the Postgres pool
+# is a SHARED ThreadedConnectionPool with maxconn=10 (database/postgres/db.py),
+# so ~10 simultaneous probes could exhaust it and make real requests fail
+# while every dependency is actually healthy.
+#
+# Two mechanisms prevent that:
+#   1. TTL cache  -- a result is reused for _CACHE_TTL seconds, so a probe
+#      every second costs one real check every _CACHE_TTL seconds.
+#   2. Single-flight -- only ONE thread ever runs the checks at a time. Others
+#      immediately serve the last known result instead of queueing (bounded
+#      staleness beats unbounded pile-up). Only the very first call, with no
+#      cached result to fall back on, waits for the in-flight check.
+#
+# Together these cap health-check load at a single Postgres connection and a
+# single Qdrant/Neo4j round trip at any instant, no matter the probe rate.
+_CACHE_TTL = 5.0          # seconds; well under any sane probe interval
+_cache_lock = threading.Lock()
+_cached: tuple | None = None      # (expires_at_monotonic, body, ready)
 
 # Dependencies whose failure means the service genuinely cannot serve traffic
 # and readiness must report unhealthy (HTTP 503).
@@ -72,7 +100,7 @@ REQUIRED_TABLES = (
 )
 
 
-def _check_postgres() -> tuple[str, str]:
+def _check_postgres() -> tuple[str, str, str]:
     """
     Verifies the connection AND that every table in REQUIRED_TABLES exists.
 
@@ -80,6 +108,9 @@ def _check_postgres() -> tuple[str, str]:
     all tables are checked in a single round trip. Names are passed as
     quoted-qualified identifiers ('public."user"') because `user` is a
     reserved word.
+
+    Returns (status, public_reason, private_detail) -- see _run_checks for
+    why the verbose detail never leaves the logs.
     """
     from database.postgres.db import get_connection, release_connection
     conn = None
@@ -98,14 +129,11 @@ def _check_postgres() -> tuple[str, str]:
         missing = [t for t, q in zip(REQUIRED_TABLES, qualified)
                    if q not in present]
         if missing:
-            log.warning("Health: Postgres reachable but missing table(s): %s",
-                        ", ".join(missing))
-            return "down", f"missing table(s): {', '.join(missing)}"
-        return "ok", f"{len(REQUIRED_TABLES)} required tables present"
+            return ("down", "missing_tables",
+                    f"missing table(s): {', '.join(missing)}")
+        return ("ok", "ready", f"{len(REQUIRED_TABLES)} required tables present")
     except Exception as exc:
-        log.warning("Health: Postgres check failed (%s: %s)",
-                    exc.__class__.__name__, exc)
-        return "down", f"{exc.__class__.__name__}: {exc}"
+        return ("down", "unreachable", f"{exc.__class__.__name__}: {exc}")
     finally:
         if conn is not None:
             try:
@@ -114,7 +142,7 @@ def _check_postgres() -> tuple[str, str]:
                 pass
 
 
-def _check_qdrant() -> tuple[str, str]:
+def _check_qdrant() -> tuple[str, str, str]:
     """
     Verifies the connection AND that the CONFIGURED collection exists and is
     non-empty. A reachable Qdrant with no `problems_full` collection (or an
@@ -136,25 +164,22 @@ def _check_qdrant() -> tuple[str, str]:
                 c.name for c in client.get_collections().collections
             }
         if not exists:
-            log.warning("Health: Qdrant reachable but collection %r is missing",
-                        COLLECTION)
-            return "down", f"collection {COLLECTION!r} not found"
+            return ("down", "missing_collection",
+                    f"collection {COLLECTION!r} not found")
 
         # exact=False -> cheap approximate count, enough to tell "populated"
         # from "empty" without scanning a large collection.
         count = client.count(COLLECTION, exact=False).count
         if not count:
-            log.warning("Health: Qdrant collection %r is empty", COLLECTION)
-            return "down", f"collection {COLLECTION!r} is empty"
+            return ("down", "empty_collection",
+                    f"collection {COLLECTION!r} is empty")
 
-        return "ok", f"collection {COLLECTION!r}, ~{count} points"
+        return ("ok", "ready", f"collection {COLLECTION!r}, ~{count} points")
     except Exception as exc:
-        log.warning("Health: Qdrant check failed (%s: %s)",
-                    exc.__class__.__name__, exc)
-        return "down", f"{exc.__class__.__name__}: {exc}"
+        return ("down", "unreachable", f"{exc.__class__.__name__}: {exc}")
 
 
-def _check_neo4j() -> tuple[str, str]:
+def _check_neo4j() -> tuple[str, str, str]:
     """
     'disabled' when Neo4j isn't configured at all (NEO4J_PASSWORD unset --
     the service is meant to run without it), 'down' when it's configured but
@@ -163,21 +188,70 @@ def _check_neo4j() -> tuple[str, str]:
     probe connection.
     """
     if not db_env.NEO4J_PASSWORD:
-        return "disabled", "NEO4J_PASSWORD not set -- durable tier off by config"
+        return ("disabled", "not_configured",
+                "NEO4J_PASSWORD not set -- durable tier off by config")
     from controllers.recommendation_controller import _get_neo4j_store
     store = _get_neo4j_store()
     if not store.enabled:
         # Configured, but the driver failed to initialise (e.g. Aura was
         # unreachable/paused at startup) -- the app is running without Neo4j.
-        return "down", "driver unavailable (unreachable at startup?)"
+        return ("down", "unreachable",
+                "driver unavailable (unreachable at startup?)")
     if not store.ping():
-        return "down", "connectivity check failed"
-    return "ok", "reachable"
+        return ("down", "unreachable", "connectivity check failed")
+    return ("ok", "ready", "reachable")
+
+
+def _run_checks() -> tuple[dict, bool]:
+    """
+    Execute every dependency probe once, uncached. Call handle_health()
+    instead unless you specifically want to bypass the throttle -- this one
+    opens a real Postgres connection on every call.
+
+    SECURITY: / and /health are unauthenticated (a platform probe carries no
+    token), so the RESPONSE carries only a coarse, non-identifying reason code
+    per dependency ("missing_tables", "unreachable", ...). The verbose detail
+    -- raw driver exception text, which routinely embeds hostnames and
+    connection parameters, plus internal table and collection names -- is
+    written to the LOGS only, where it is just as actionable for an operator
+    without handing an anonymous caller a map of the infrastructure.
+    """
+    results = {
+        "postgres": _check_postgres(),
+        "qdrant": _check_qdrant(),
+        "neo4j": _check_neo4j(),
+    }
+
+    for name, (status_, reason, detail) in results.items():
+        if status_ == "down":
+            log.warning("Health: %s %s -- %s", name, reason, detail)
+        else:
+            log.debug("Health: %s %s -- %s", name, reason, detail)
+
+    critical_down = [dep for dep in CRITICAL_DEPENDENCIES
+                     if results[dep][0] != "ok"]
+    ready = not critical_down
+
+    if not ready:
+        status = "unhealthy"
+    elif any(s == "down" for s, _, _ in results.values()):
+        status = "degraded"
+    else:
+        status = "ok"
+
+    body = {
+        "status": status,
+        "service": "recommendation",
+        "dependencies": {
+            name: {"status": s, "reason": r} for name, (s, r, _) in results.items()
+        },
+    }
+    return body, ready
 
 
 def handle_health() -> tuple[dict, bool]:
     """
-    Run every dependency check and return (body, ready).
+    Return (body, ready) for the readiness endpoints, throttled.
 
     `ready` is False only when a CRITICAL dependency is down -- the route
     layer maps that to HTTP 503 so the platform stops reporting the instance
@@ -188,29 +262,40 @@ def handle_health() -> tuple[dict, bool]:
     Each dependency reports {"status", "detail"}; the detail names the exact
     missing table/collection so a red health check is directly actionable
     from the Render dashboard instead of just "down".
+
+    Results are cached for _CACHE_TTL seconds and refreshed single-flight --
+    see the module header for why an unauthenticated probe must never run its
+    dependency sequence per-request.
     """
-    results = {
-        "postgres": _check_postgres(),
-        "qdrant": _check_qdrant(),
-        "neo4j": _check_neo4j(),
-    }
+    global _cached
 
-    critical_down = [dep for dep in CRITICAL_DEPENDENCIES
-                     if results[dep][0] != "ok"]
-    ready = not critical_down
+    now = time.monotonic()
+    cached = _cached
+    if cached is not None and now < cached[0]:
+        return cached[1], cached[2]
 
-    if not ready:
-        status = "unhealthy"
-    elif any(s == "down" for s, _ in results.values()):
-        status = "degraded"
-    else:
-        status = "ok"
+    # Stale (or absent). Exactly one thread refreshes; the rest serve the
+    # last known result rather than piling onto the connection pool. With no
+    # cached result at all (first-ever call) we must wait for a real answer.
+    if not _cache_lock.acquire(blocking=cached is None):
+        return cached[1], cached[2]
 
-    body = {
-        "status": status,
-        "service": "recommendation",
-        "dependencies": {
-            name: {"status": s, "detail": d} for name, (s, d) in results.items()
-        },
-    }
-    return body, ready
+    try:
+        # Re-check: another thread may have refreshed while we waited.
+        cached = _cached
+        now = time.monotonic()
+        if cached is not None and now < cached[0]:
+            return cached[1], cached[2]
+
+        body, ready = _run_checks()
+        _cached = (now + _CACHE_TTL, body, ready)
+        return body, ready
+    finally:
+        _cache_lock.release()
+
+
+def reset_health_cache() -> None:
+    """Drop the cached readiness result. For tests, and for any caller that
+    needs the next probe to reflect reality immediately."""
+    global _cached
+    _cached = None
