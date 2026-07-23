@@ -31,6 +31,10 @@ from pipeline.recommender.models.user_graph import (
     UserGraph, ProblemEdge, EdgeType,
 )
 from pipeline.recommender.services.user_graph_service import UserGraphService
+from database.postgres.db import (
+    get_connection, release_connection, _topic_id_to_ml_slug,
+)
+from database.postgres.topic_taxonomy import canonical_for_ml_slug
 
 
 # A topic gets MASTERED once BKT crosses this threshold (matches bkt.py's
@@ -136,6 +140,21 @@ class StateUpdateService:
         except ValueError:
             return self.graph_service.new_user_graph(user_id)
 
+    @staticmethod
+    def _resolve_ml_slug(conn, raw_topic: str):
+        """
+        raw_topic is either a backend topic.id (translate via
+        _topic_id_to_ml_slug, same as UserGraphService._build()) or already
+        a genuine ML slug/legacy tag (the static-mapping fallback caller
+        convention -- canonical_for_ml_slug passes those through/collapses
+        legacy tags unchanged). None if it's neither -- callers must skip
+        the write, not guess.
+        """
+        slug = _topic_id_to_ml_slug(conn, raw_topic)
+        if slug is not None:
+            return slug
+        return canonical_for_ml_slug(raw_topic)
+
     def _apply_problem_edge(self, graph: UserGraph, submission: dict, now: float) -> None:
         """Add a new ProblemEdge node for this submission -- 'new nodes added w.r.t questions'."""
         problem_id = str(submission.get("problemId", ""))
@@ -157,37 +176,64 @@ class StateUpdateService:
         Update every ConceptEdge touched by this submission with fresh
         mastery (BKT) and urgency/half_life (HLR) values. Returns the list
         of topic slugs that were touched.
+
+        bkt_results/updated_hlr's topic keys have two possible conventions
+        depending on how bkt.py::process_submission/hlr.py::process_hlr
+        were called: when the backend sends problemTopics, the key is the
+        backend's own topic.id (verbatim passthrough -- see
+        submission_controller.py::_split_current_state); when problemTopics
+        is omitted (the "static mapping fallback for legacy callers" path,
+        e.g. problem_to_topics-driven tests/direct ML-internal callers),
+        the key is already a genuine ML slug. Every OTHER ConceptEdge in
+        this graph -- built by UserGraphService._build() from
+        user_topic_mastery -- is keyed by the ML slug (see its docstring:
+        an untranslated topic.id "never matches any real Qdrant topic_tags
+        value", so every downstream pool silently finds zero candidates for
+        that topic). _resolve_ml_slug tries the topic.id->slug translation
+        first, falling back to treating the key as an already-valid ML slug,
+        so both calling conventions land on the same ML-slug-keyed
+        ConceptEdge that _build() would also produce for that topic.
         """
         touched = set()
+        conn = get_connection()
+        try:
+            for r in bkt_results:
+                raw_topic = r["topic"]
+                topic = self._resolve_ml_slug(conn, str(raw_topic))
+                if topic is None:
+                    # Neither a backend topic.id with a known ML-slug
+                    # mapping, nor a recognised ML slug itself -- skip the
+                    # graph write rather than guess a key, same convention
+                    # _build() uses for the cold-start path.
+                    continue
+                touched.add(topic)
+                mastery = r["new_p_l"]
 
-        for r in bkt_results:
-            topic = r["topic"]
-            touched.add(topic)
-            mastery = r["new_p_l"]
+                hlr_state = updated_hlr.get(raw_topic, {})
+                urgency = hlr_state.get("p_recall")
+                urgency = (1.0 - urgency) if urgency is not None else 0.0
+                half_life = hlr_state.get("half_life", 1.0)
 
-            hlr_state = updated_hlr.get(topic, {})
-            urgency = hlr_state.get("p_recall")
-            urgency = (1.0 - urgency) if urgency is not None else 0.0
-            half_life = hlr_state.get("half_life", 1.0)
+                edge_type = (EdgeType.MASTERED if mastery >= MASTERY_THRESHOLD
+                            else EdgeType.LEARNING)
 
-            edge_type = (EdgeType.MASTERED if mastery >= MASTERY_THRESHOLD
-                        else EdgeType.LEARNING)
+                existing = graph.concept_edges.get(topic)
+                confidence = existing.confidence if existing else 0.66
 
-            existing = graph.concept_edges.get(topic)
-            confidence = existing.confidence if existing else 0.66
-
-            # Authoritative overwrite -- the BKT/HLR output computed just now
-            # IS the new truth for this topic. add_concept_edge's max-merge
-            # would incorrectly refuse to let mastery decrease after a poor
-            # submission; see update_concept_state's docstring for why.
-            graph.update_concept_state(
-                topic,
-                edge_type=edge_type,
-                mastery_score=mastery,
-                confidence=confidence,
-                urgency=urgency,
-                half_life=half_life,
-                last_attempted=time.time(),
-            )
+                # Authoritative overwrite -- the BKT/HLR output computed just now
+                # IS the new truth for this topic. add_concept_edge's max-merge
+                # would incorrectly refuse to let mastery decrease after a poor
+                # submission; see update_concept_state's docstring for why.
+                graph.update_concept_state(
+                    topic,
+                    edge_type=edge_type,
+                    mastery_score=mastery,
+                    confidence=confidence,
+                    urgency=urgency,
+                    half_life=half_life,
+                    last_attempted=time.time(),
+                )
+        finally:
+            release_connection(conn)
 
         return list(touched)
