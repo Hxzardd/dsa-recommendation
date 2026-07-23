@@ -17,6 +17,7 @@ from pipeline.recommender.services.heuristic_ranker import (
     HeuristicRanker, RankedCandidate, rank_top_k,
     ZPD_OPTIMAL, ZPD_LO, ZPD_HI, POOL_AGREEMENT_SATURATION,
     WEIGHT_PROXIMITY, WEIGHT_POOL_AGREE, WEIGHT_URGENCY, WEIGHT_SIMILARITY,
+    WEIGHT_DIFFICULTY_ALIGNMENT,
 )
 
 
@@ -38,7 +39,13 @@ def _row(pid, predicted_success=ZPD_OPTIMAL, pool_count=1,
 class TestWeightsSumToOne(unittest.TestCase):
 
     def test_default_weights_sum_to_one(self):
-        total = WEIGHT_PROXIMITY + WEIGHT_POOL_AGREE + WEIGHT_URGENCY + WEIGHT_SIMILARITY
+        """All five weights that score_one() actually applies must sum to
+        1.0 -- WEIGHT_DIFFICULTY_ALIGNMENT is a real term in the score, not
+        a bonus added on top of an already-complete 1.0."""
+        total = (
+            WEIGHT_PROXIMITY + WEIGHT_POOL_AGREE + WEIGHT_URGENCY
+            + WEIGHT_SIMILARITY + WEIGHT_DIFFICULTY_ALIGNMENT
+        )
         self.assertAlmostEqual(total, 1.0, places=6)
 
 

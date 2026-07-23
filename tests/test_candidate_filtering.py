@@ -253,6 +253,36 @@ class TestRankerBridge(unittest.TestCase):
         raw = json.dumps(rows)
         self.assertIsInstance(raw, str)
 
+    def test_ranker_input_correct_from_a_second_layer_instance(self):
+        """recommend.py and pool_generation.py each construct their own
+        CandidateFilteringLayer around an already-filtered merged list --
+        to_ranker_input()'s cached avg_mastery/max_urgency (populated by
+        run()'s ZPD pass on a different instance) must still be correct
+        when read from a fresh instance around the same MergedCandidate
+        objects."""
+        g = _graph(concepts=[_concept("arrays", mastery=0.6, urgency=0.4)])
+        producer = CandidateFilteringLayer(g)
+        merged, _ = producer.run({"A": [_cand("p1", "A", ["arrays"], difficulty=0.5)]})
+
+        consumer = CandidateFilteringLayer(g)
+        rows = consumer.to_ranker_input(merged)
+        self.assertAlmostEqual(rows[0]["avg_mastery"], 0.6)
+        self.assertAlmostEqual(rows[0]["max_urgency"], 0.4)
+
+    def test_ranker_input_correct_without_run_called_first(self):
+        """to_ranker_input() must compute correctly from scratch (cache
+        miss) when called on MergedCandidate objects that never went
+        through run()/_apply_zpd_filter at all."""
+        g = _graph(concepts=[_concept("arrays", mastery=0.6, urgency=0.4)])
+        mc = MergedCandidate(
+            problem_id="p1", pool_sources=["A"], best_score=0.5,
+            topic_tags=["arrays"], difficulty_score=0.5,
+        )
+        layer = CandidateFilteringLayer(g)
+        rows = layer.to_ranker_input([mc])
+        self.assertAlmostEqual(rows[0]["avg_mastery"], 0.6)
+        self.assertAlmostEqual(rows[0]["max_urgency"], 0.4)
+
 
 # ===========================================================================
 # Report

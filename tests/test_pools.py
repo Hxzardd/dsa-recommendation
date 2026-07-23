@@ -21,6 +21,7 @@ from pipeline.recommender.pools.pools import (
     CoursePathPool, TransferPool, WeaknessPool, SpacedReviewPool,
     StretchPool, NoveltyPool, VectorPool, build_pools, POOL_CLASSES,
 )
+from pipeline.recommender.pools.base_pool import MED_BAND
 
 NOW = time.time()
 
@@ -278,13 +279,36 @@ if __name__ == "__main__":
     unittest.main(verbosity=2)
 
 
+def _large_starter_catalog(count=40):
+    """count problems per STARTER_CONCEPTS topic, ascending difficulty,
+    enough depth for NOVELTY_COLD_START_SKIP to have real room to work with."""
+    problems = []
+    for topic in ("array", "string", "hash_map"):
+        for i in range(count):
+            problems.append(_Pt(f"{topic}_{i}", [topic], round(i / count, 4)))
+    return problems
+
+
 class TestColdStartFallback(unittest.TestCase):
     """
-    Regression test for a real bug: CoursePathPool's and NoveltyPool's
-    cold-start branches used to read graph.concept_edges / mastered
-    concepts to build their fallback list -- which is exactly what's
-    EMPTY for a genuinely brand-new user, so both pools silently
-    returned zero candidates for every new signup.
+    Regression tests for two real issues in the cold-start path:
+
+    1. CoursePathPool's and NoveltyPool's cold-start branches used to read
+       graph.concept_edges / mastered concepts to build their fallback
+       list -- which is exactly what's EMPTY for a genuinely brand-new
+       user, so both pools silently returned zero candidates for every new
+       signup.
+
+    2. Once fixed, both pools' cold-start fallback queried the identical
+       STARTER_CONCEPTS list with the identical exclude set via the same
+       difficulty-ascending helper, so they returned the SAME candidates --
+       CandidateFilteringLayer's dedup merged them under one problem_id
+       with both pool names attached, artificially inflating
+       HeuristicRanker's pool_agreement signal for what was really one
+       source, not two independently agreeing ones. NoveltyPool's
+       cold-start fallback now skips past CoursePathPool's leading slice
+       (NOVELTY_COLD_START_SKIP) so the two pools genuinely diverge
+       whenever the catalog has enough depth to support it.
     """
 
     def test_course_path_returns_candidates_for_totally_cold_user(self):
@@ -310,3 +334,82 @@ class TestColdStartFallback(unittest.TestCase):
         self.assertGreater(len(cands), 0,
                            "NoveltyPool returned nothing for a cold-start "
                            "user -- starter concept fallback is broken")
+
+    def test_novelty_diverges_from_course_path_when_catalog_has_depth(self):
+        """With enough candidates per topic, the two pools' cold-start
+        picks must not be the identical set -- otherwise pool_agreement
+        is being inflated by one query wearing two labels."""
+        problems = _large_starter_catalog(count=40)
+        qdrant = FakeQdrant(problems)
+        graph = _graph()
+
+        course_path = CoursePathPool(qdrant=qdrant).generate(
+            graph, _StubState(None, graph), n=10)
+        novelty = NoveltyPool(qdrant=qdrant).generate(
+            graph, _StubState(None, graph), n=10)
+
+        course_path_ids = {c.problem_id for c in course_path}
+        novelty_ids = {c.problem_id for c in novelty}
+
+        self.assertGreater(len(course_path_ids), 0)
+        self.assertGreater(len(novelty_ids), 0)
+        self.assertEqual(
+            course_path_ids & novelty_ids, set(),
+            "CoursePathPool and NoveltyPool returned overlapping cold-start "
+            "candidates -- pool_agreement would be inflated by a single "
+            "underlying query counted as two independent pools agreeing.",
+        )
+
+    def test_novelty_still_returns_candidates_with_tiny_catalog(self):
+        """Regression guard: when there are fewer matching candidates than
+        NOVELTY_COLD_START_SKIP + n, the skip must clamp down rather than
+        slicing past the end and returning nothing."""
+        problems = [
+            _Pt("array_0", ["array"], 0.2),
+            _Pt("string_0", ["string"], 0.2),
+        ]
+        pool = NoveltyPool(qdrant=FakeQdrant(problems))
+        graph = _graph()
+        cands = pool.generate(graph, _StubState(None, graph), n=10)
+        self.assertGreater(len(cands), 0,
+                           "NoveltyPool returned nothing when the catalog was "
+                           "too small to support the cold-start skip offset")
+
+    def test_weakness_stays_empty_for_totally_cold_user(self):
+        """Intentional: 'weak' is a relative judgement with nothing to
+        compare against when the user has zero attempt history."""
+        pool = WeaknessPool(qdrant=FakeQdrant(_large_starter_catalog()))
+        graph = _graph()
+        cands = pool.generate(graph, _StubState(None, graph), n=10)
+        self.assertEqual(cands, [])
+
+    def test_spaced_review_stays_empty_for_totally_cold_user(self):
+        """Intentional: nothing can be due for review when nothing has
+        ever been studied."""
+        pool = SpacedReviewPool(qdrant=FakeQdrant(_large_starter_catalog()))
+        graph = _graph()
+        cands = pool.generate(graph, _StubState(None, graph), n=10)
+        self.assertEqual(cands, [])
+
+    def test_stretch_returns_candidates_for_totally_cold_user(self):
+        """StretchPool used to return [] for every brand-new user. It now
+        falls back to STARTER_CONCEPTS through its own existing
+        medium/hard band-mix mechanism instead of bailing out."""
+        pool = StretchPool(qdrant=FakeQdrant(_large_starter_catalog()))
+        graph = _graph()
+        cands = pool.generate(graph, _StubState(None, graph), n=10)
+        self.assertGreater(len(cands), 0,
+                           "StretchPool returned nothing for a cold-start user")
+
+    def test_stretch_cold_start_respects_medium_hard_band(self):
+        """The cold-start fallback must still honour StretchPool's own
+        ALLOWED_BANDS -- no easy-band candidates, even from STARTER_CONCEPTS."""
+        pool = StretchPool(qdrant=FakeQdrant(_large_starter_catalog()))
+        graph = _graph()
+        cands = pool.generate(graph, _StubState(None, graph), n=20)
+        for c in cands:
+            self.assertGreaterEqual(
+                c.difficulty_score, MED_BAND[0],
+                f"{c.problem_id} (difficulty {c.difficulty_score}) is below "
+                "StretchPool's medium/hard band even at cold start",
+            )

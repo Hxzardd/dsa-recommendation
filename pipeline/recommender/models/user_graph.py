@@ -159,8 +159,27 @@ class UserGraph:
     # ------------------------------------------------------------------
 
     def mastered_concepts(self, threshold: float = 0.7) -> list[str]:
-        return [s for s, e in self.concept_edges.items()
-                if e.mastery_score >= threshold]
+        """
+        Cached per (threshold), invalidated on any concept_edges mutation
+        (add_concept_edge/update_concept_state) -- same pattern as
+        _prereq_index_cache below. is_locked() calls this once per
+        candidate via mastered_concepts(mastery_threshold) (through
+        set(self.mastered_concepts(...))), and is_locked() itself is called
+        once per candidate from every pool's _self_filter_locked and again
+        from CandidateFilteringLayer._filter_pool -- within one
+        recommendation request that's the same unchanging concept_edges
+        snapshot being re-scanned dozens of times for the same threshold.
+        """
+        cache = getattr(self, "_mastered_concepts_cache", None)
+        if cache is None:
+            cache = {}
+            self._mastered_concepts_cache = cache
+        if threshold in cache:
+            return cache[threshold]
+        result = [s for s, e in self.concept_edges.items()
+                  if e.mastery_score >= threshold]
+        cache[threshold] = result
+        return result
 
     def weak_concepts(self, threshold: float = 0.6) -> list[str]:
         return [s for s, e in self.concept_edges.items()
@@ -201,6 +220,7 @@ class UserGraph:
             existing.mastery_score = max(existing.mastery_score, edge.mastery_score)
             existing.severity      = max(existing.severity,      edge.severity)
             existing.urgency       = max(existing.urgency,       edge.urgency)
+        self._mastered_concepts_cache = None   # invalidate: mastery_score may have changed
 
     def update_concept_state(self, concept_slug: str, **fields) -> None:
         """
@@ -228,9 +248,11 @@ class UserGraph:
                 edge_type=fields.pop("edge_type", EdgeType.LEARNING),
                 **fields,
             )
+            self._mastered_concepts_cache = None   # invalidate: mastery_score may have changed
             return
         for key, value in fields.items():
             setattr(existing, key, value)
+        self._mastered_concepts_cache = None   # invalidate: mastery_score may have changed
 
     def add_cc_edge(self, edge: ConceptConceptEdge) -> None:
         self.cc_edges.setdefault(edge.source_slug, []).append(edge)

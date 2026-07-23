@@ -315,10 +315,12 @@ class BasePool:
         return out
 
     def _lowest_difficulty_by_concept(self, concept_slugs, n, exclude,
-                                      graph: Optional[UserGraph] = None) -> list[Candidate]:
+                                      graph: Optional[UserGraph] = None,
+                                      skip: int = 0) -> list[Candidate]:
         """
         Pull problems tagged with any of the given concepts, sorted by
-        difficulty_score ascending, taking the n lowest available.
+        difficulty_score ascending, taking the n lowest available (after
+        skipping the first `skip` -- see `skip`'s docstring note below).
 
         For catalogs where EASY_BAND (0-0.34) has no matching data at all,
         _problems_by_concept's band-filtered query returns nothing even
@@ -326,6 +328,16 @@ class BasePool:
         band cutoff. This ranks by actual difficulty_score instead of a
         fixed absolute band, so cold-start users still get the lowest
         difficulty problems the catalog actually has for these concepts.
+
+        `skip` (default 0, CoursePathPool's behaviour is unchanged): lets a
+        second caller draw from further down the same ascending-difficulty
+        ordering instead of the identical leading slice. NoveltyPool's
+        cold-start fallback uses this so it doesn't return the exact same
+        problems as CoursePathPool's cold-start fallback -- both currently
+        query the same STARTER_CONCEPTS with the same exclude set, so
+        without an offset they'd produce the same candidates under two pool
+        labels, only artificially inflating pool_agreement in the ranker
+        rather than contributing genuine additional signal.
         """
         if not self.qdrant or not concept_slugs:
             return []
@@ -336,7 +348,7 @@ class BasePool:
                 scroll_filter=Filter(must=[
                     FieldCondition(key="topic_tags", match=MatchAny(any=list(concept_slugs))),
                 ]),
-                limit=max(n * 10, 100), with_payload=True, with_vectors=False,
+                limit=max((skip + n) * 10, 100), with_payload=True, with_vectors=False,
             )
         except Exception:
             return []
@@ -352,7 +364,12 @@ class BasePool:
                 difficulty_score=pl.get("difficulty_score"),
             ))
         candidates.sort(key=lambda c: c.difficulty_score if c.difficulty_score is not None else 1.0)
-        out = candidates[:n]
+        # Clamp skip so a small catalog for these concepts (fewer matches
+        # than skip+n) still returns up to n candidates instead of nothing --
+        # preferring to skip past the leading slice only when there's
+        # actually enough depth to do so.
+        skip = min(skip, max(0, len(candidates) - n))
+        out = candidates[skip:skip + n]
         return self._self_filter_locked(out, graph)
 
     def _ann(self, query_vec,  n, exclude, graph: Optional[UserGraph] = None,  mix: Optional[dict] = None,) -> list[Candidate]:

@@ -164,11 +164,3 @@ class PoolGenerationOrchestrator:
             raw_counts=raw_counts,
             requested_counts=requested_counts,
         )
-
-
-def generate_recommendations(graph: UserGraph, state: UserStateVector,
-                              qdrant=None, collection: str = "problems_full",
-                              total_n: int = 30) -> PoolGenerationResult:
-    """Convenience one-shot wrapper for callers that don't need to reuse the orchestrator."""
-    return PoolGenerationOrchestrator(qdrant=qdrant, collection=collection).generate(
-        graph, state, total_n=total_n)
