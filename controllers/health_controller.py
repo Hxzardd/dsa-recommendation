@@ -323,7 +323,18 @@ def handle_health() -> tuple[dict, bool]:
             return cached[1], cached[2]
 
         body, ready = _run_checks()
-        _cached = (now + _CACHE_TTL, body, ready)
+        # Expiry MUST be measured from when the check FINISHED, not when it
+        # started. _run_checks() can legitimately run long during a real
+        # outage (e.g. Qdrant's own client-side timeout is 10s, well past
+        # _CACHE_TTL=5s) -- computing the expiry from the pre-check `now`
+        # would then produce an entry that is already expired the instant
+        # it's written, so the very next caller re-triggers the full
+        # sequence immediately. That defeats the throttle exactly when an
+        # outage makes it matter most: a slow/failing dependency would keep
+        # every request paying its full timeout instead of being shielded
+        # by the cache. Re-reading the clock here guarantees the cached
+        # result is honoured for a full _CACHE_TTL from actual completion.
+        _cached = (time.monotonic() + _CACHE_TTL, body, ready)
         return body, ready
     finally:
         _cache_lock.release()

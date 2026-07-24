@@ -242,6 +242,34 @@ class TestProbeThrottling(unittest.TestCase):
         self.assertEqual(body["status"], hc._STARTING_STATUS)
         self.assertEqual(body["dependencies"], {})
 
+    def test_slow_check_still_caches_for_a_full_ttl_after_it_finishes(self):
+        """
+        Regression: expiry must be measured from when _run_checks() FINISHES,
+        not when it started. A dependency check can legitimately take longer
+        than _CACHE_TTL during a real outage (e.g. Qdrant's own client
+        timeout is 10s, well past the 5s default TTL) -- if expiry were
+        computed from the pre-check timestamp, the cache entry would be born
+        already expired, and the very next caller would immediately re-run
+        the full sequence instead of being shielded by the cache. That
+        defeats the whole point of throttling exactly when a slow/failing
+        dependency makes it matter most.
+        """
+        check_duration = 0.3
+        ttl = 0.2   # shorter than the check itself -- the exact failure mode
+        with patch.object(hc, "_CACHE_TTL", ttl):
+            with self._counting_probes(delay=check_duration) as calls:
+                hc.handle_health()   # the slow check that populates the cache
+                self.assertEqual(calls["n"], 1)
+
+                # Immediately after the slow check returns, the cache must
+                # still be honoured (an entry timed from the pre-check clock
+                # would already be expired here, since check_duration > ttl).
+                hc.handle_health()
+                self.assertEqual(
+                    calls["n"], 1,
+                    "cache entry from a slow check was already expired -- "
+                    "expiry is being measured from before the check ran")
+
     def test_cache_expires_so_a_real_outage_is_noticed(self):
         with self._counting_probes() as calls:
             hc.handle_health()
