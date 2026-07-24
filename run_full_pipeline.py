@@ -94,7 +94,7 @@ OFFLINE_STEPS = [
 ]
 
 # Only auto-generate the topic-edges file if it doesn't already exist --
-# if you're using a curated version (e.g. Aashray's), this step is
+# if you're using a curated version (e.g. the one in data/), this step is
 # skipped entirely so it's never overwritten. Same "skip if already
 # done" logic as the Qdrant collection check further down.
 if not Path(TOPIC_EDGES_PATH).exists():

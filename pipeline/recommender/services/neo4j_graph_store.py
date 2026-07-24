@@ -73,6 +73,24 @@ class Neo4jGraphStore:
     def enabled(self) -> bool:
         return self._driver is not None
 
+    def ping(self) -> bool:
+        """
+        Liveness check for the durable tier: True only if the underlying
+        driver is present AND can currently reach Neo4j. Used by the
+        readiness endpoint so a paused/unreachable Aura instance is reported
+        honestly instead of assumed healthy. Reuses the app's existing
+        driver (no new connection per probe) and never raises -- a failed
+        verify_connectivity() is reported as False, not propagated.
+        """
+        if self._driver is None:
+            return False
+        try:
+            self._driver.verify_connectivity()
+            return True
+        except Exception as exc:
+            log.warning("Neo4j ping failed: %s", exc)
+            return False
+
     # ------------------------------------------------------------- save
 
     def save(self, graph: UserGraph) -> None:
@@ -151,7 +169,9 @@ class Neo4jGraphStore:
                     e.sm2_ef            = $sm2_ef,
                     e.sm2_interval      = $sm2_interval,
                     e.next_review_date  = $next_review_date,
-                    e.last_attempted    = $last_attempted
+                    e.last_attempted    = $last_attempted,
+                    e.problems_solved   = $problems_solved,
+                    e.attempt_count     = $attempt_count
                 """,
                 user_id=u.user_id, slug=slug,
                 edge_type=edge.edge_type.value,
@@ -164,6 +184,13 @@ class Neo4jGraphStore:
                 sm2_interval=edge.sm2_interval,
                 next_review_date=edge.next_review_date,
                 last_attempted=edge.last_attempted,
+                # Imported per-topic activity -- the cold-start personalization
+                # signal. Persisted here so a graph served from the durable
+                # Neo4j tier (after the Redis TTL expires) keeps personalizing
+                # instead of silently reverting to the pre-fix common path
+                # until the next full Postgres rebuild.
+                problems_solved=edge.problems_solved,
+                attempt_count=edge.attempt_count,
             )
 
         for src, edges in graph.cc_edges.items():
@@ -250,6 +277,10 @@ class Neo4jGraphStore:
                 sm2_interval=e.get("sm2_interval", 1),
                 next_review_date=e.get("next_review_date"),
                 last_attempted=e.get("last_attempted"),
+                # .get(..., 0) keeps graphs saved BEFORE this field existed
+                # loading cleanly (they just restore with engagement 0).
+                problems_solved=e.get("problems_solved", 0),
+                attempt_count=e.get("attempt_count", 0),
             )
 
         # cc_edges are concept<->concept, not user-scoped -- load the

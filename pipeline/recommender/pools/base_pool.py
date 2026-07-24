@@ -30,6 +30,7 @@ and returns:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -272,6 +273,65 @@ class BasePool:
             out.extend(got)
             local_exclude |= {c.problem_id for c in got}
         out = self._self_filter_locked(out, graph)
+        return out[:n]
+
+    def _draw_by_engagement_priority(self, concept_slugs, n, exclude,
+                                     mix: Optional[dict] = None,
+                                     graph: Optional[UserGraph] = None,
+                                     spread: int = 6) -> list[Candidate]:
+        """
+        Draw n candidates concept-by-concept in DESCENDING engagement order
+        (graph.concept_engagement), so a user's most-practiced topics get
+        first claim on the slate.
+
+        This is the personalization path for functionally-cold users (see
+        CoursePathPool.generate). Unlike _draw_with_mix -- which passes every
+        concept to a single Qdrant MatchAny scroll where the list order is
+        irrelevant and results come back in catalog order (identical for every
+        such user) -- this issues a separate per-concept draw in priority
+        order, so the ORDER of concepts genuinely shapes the output.
+
+        Spreads across up to `spread` distinct topics on the first pass
+        (weighted toward the highest-engagement ones) so the slate still
+        reflects the user's breadth rather than dumping all n on their single
+        top topic, then does a fill pass over the remaining topics for any
+        slots left by sparse concepts. Requires graph (for the engagement
+        ordering); falls back to a plain _draw_with_mix if graph is None.
+        """
+        if graph is None:
+            return self._draw_with_mix(concept_slugs, n, exclude, mix, graph=graph)
+
+        ranked = sorted(
+            concept_slugs,
+            key=lambda s: graph.concept_engagement(s),
+            reverse=True,
+        )
+
+        out: list[Candidate] = []
+        local_exclude = set(exclude)
+
+        # First pass: cap per-concept so several of the user's top topics are
+        # represented rather than the single most-engaged one monopolising n.
+        per_concept = max(1, math.ceil(n / max(1, min(len(ranked), spread))))
+        for slug in ranked:
+            if len(out) >= n:
+                break
+            take = min(per_concept, n - len(out))
+            got = self._draw_with_mix([slug], take, local_exclude, mix, graph=graph)
+            out.extend(got)
+            local_exclude |= {c.problem_id for c in got}
+
+        # Fill pass: if top topics were sparse, pull more from the same
+        # priority order until n is reached (or the catalog is exhausted).
+        if len(out) < n:
+            for slug in ranked:
+                if len(out) >= n:
+                    break
+                got = self._draw_with_mix(
+                    [slug], n - len(out), local_exclude, mix, graph=graph)
+                out.extend(got)
+                local_exclude |= {c.problem_id for c in got}
+
         return out[:n]
 
     def _problems_by_concept(self, concept_slugs, n, exclude,

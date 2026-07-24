@@ -10,9 +10,19 @@ MIN_RECOMMENDATIONS = 1
 
 router = APIRouter()
 
+# NOTE: every handler below is deliberately `def`, NOT `async def`.
+# handle_* run the recommendation pipeline synchronously -- pooled psycopg2
+# queries plus blocking Qdrant HTTP calls. An `async def` handler executes
+# directly on the event loop, so ONE /recommend call would stall every other
+# in-flight request (including the health probe) for the whole duration of
+# that pipeline run. Declaring them sync makes FastAPI dispatch each call to
+# its thread pool instead, so concurrent requests actually proceed in
+# parallel. Do not add `async` here without first making the pipeline
+# genuinely non-blocking.
+
 
 @router.get("/recommend/{user_id}")
-async def recommend(
+def recommend(
     user_id: str,
     request: Request,
     limit: int = 10,
@@ -30,7 +40,7 @@ async def recommend(
 
 
 @router.get("/topic/recommend/{user_id}")
-async def topic_recommend(
+def topic_recommend(
     user_id: str,
     request: Request,
 ):
@@ -46,7 +56,7 @@ async def topic_recommend(
 
 
 @router.post("/topic/recommend/problems")
-async def topic_problem_recommend(
+def topic_problem_recommend(
     body: TopicRecommendRequest,
     request: Request,
 ):

@@ -83,6 +83,28 @@ class ConceptEdge:
     sm2_interval:     int   = 1       # days
     next_review_date: Optional[str] = None
     last_attempted:   Optional[float] = None
+    # Imported/accumulated per-topic ACTIVITY from user_topic_mastery. This is
+    # the signal that actually DIFFERS between two users who both imported a
+    # LeetCode/CF history but whose mastery landed at the same flat floor:
+    # user X grinding arrays and user Y grinding graphs both sit at ~0.25
+    # mastery everywhere, but their per-topic solve/attempt counts are very
+    # different. Cold-start personalization (CoursePathPool, recommend_topic)
+    # uses `engagement` to break the mastery tie so those two users get
+    # genuinely different slates instead of one shared common path.
+    problems_solved:  int   = 0
+    attempt_count:    int   = 0
+
+    @property
+    def engagement(self) -> float:
+        """
+        Magnitude of the user's demonstrated activity on this topic. Solves
+        weigh more than bare attempts (a solve is stronger evidence of real
+        engagement than a failed try), but both count. 0.0 for a topic the
+        user has never touched -- so a genuinely no-signal cold-start user
+        has engagement 0 everywhere and falls back to the neutral path,
+        while an import user's real history drives their recommendations.
+        """
+        return float(self.problems_solved) * 1.0 + float(self.attempt_count) * 0.5
 
 
 @dataclass
@@ -174,6 +196,21 @@ class UserGraph:
         e = self.concept_edges.get(slug)
         return e.mastery_score if e else 0.0
 
+    def concept_engagement(self, slug: str) -> float:
+        """The user's imported/accumulated activity magnitude on this topic
+        (see ConceptEdge.engagement). 0.0 for an untouched topic. Used to
+        personalize cold-start recommendations by the user's own history
+        when mastery is uniform and can't differentiate topics."""
+        e = self.concept_edges.get(slug)
+        return e.engagement if e else 0.0
+
+    def has_engagement_signal(self) -> bool:
+        """True if the user has ANY per-topic activity that can differentiate
+        their topics. False for a genuinely no-history cold-start user (every
+        edge at engagement 0), who has nothing to personalize on and correctly
+        falls back to the neutral starter path."""
+        return any(e.engagement > 0 for e in self.concept_edges.values())
+
     def recently_exposed(self, problem_id: str, window_days: float = 7.0) -> bool:
         ts = self.exposed_ids.get(problem_id)
         if ts is None:
@@ -201,6 +238,13 @@ class UserGraph:
             existing.mastery_score = max(existing.mastery_score, edge.mastery_score)
             existing.severity      = max(existing.severity,      edge.severity)
             existing.urgency       = max(existing.urgency,       edge.urgency)
+            # engagement is additive evidence from a single source (the
+            # user_topic_mastery row); a merging edge (e.g. a WEAK gap edge
+            # created for the same slug) carries no activity of its own, so
+            # keep whichever source actually has the counts rather than
+            # zeroing them out.
+            existing.problems_solved = max(existing.problems_solved, edge.problems_solved)
+            existing.attempt_count   = max(existing.attempt_count,   edge.attempt_count)
 
     def update_concept_state(self, concept_slug: str, **fields) -> None:
         """
