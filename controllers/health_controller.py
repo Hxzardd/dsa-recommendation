@@ -58,51 +58,95 @@ log = logging.getLogger(__name__)
 # so ~10 simultaneous probes could exhaust it and make real requests fail
 # while every dependency is actually healthy.
 #
-# Two mechanisms prevent that:
-#   1. TTL cache     -- a result is reused for _CACHE_TTL seconds, so a probe
-#      every second costs one real check every _CACHE_TTL seconds.
-#   2. Single-flight, NEVER BLOCKING -- only ONE thread ever runs the checks
-#      at a time, via a non-blocking lock acquire. Every other caller gets an
-#      answer IMMEDIATELY: the last known result if one exists (bounded
-#      staleness beats waiting), or an honest "starting" 503 if nothing has
-#      ever been cached yet. No caller ever blocks waiting for the lock.
+# Three mechanisms prevent that:
 #
-#      This matters because these are sync FastAPI handlers: they execute on
-#      the SAME shared thread pool authenticated requests and the auth
-#      middleware's session lookup also run on. A thread parked waiting on
-#      `lock.acquire(blocking=True)` is a worker authenticated traffic can't
-#      use -- under a burst of concurrent unauthenticated probes (exactly the
-#      case a monitoring tool or several overlapping Render checks would
-#      produce), that pile-up degrades real requests even though every
-#      dependency is healthy. A blocking acquire here would reproduce the
-#      exact class of bug this module exists to prevent, just moved from the
-#      Postgres pool to the ASGI thread pool.
+#   1. TTL cache -- a fresh result (younger than _CACHE_TTL) is reused as-is,
+#      so a probe every second costs one real check every _CACHE_TTL seconds.
 #
-# Together these cap health-check load at a single Postgres connection and a
-# single Qdrant/Neo4j round trip at any instant, no matter the probe rate,
-# WITHOUT ever parking a thread-pool worker on a wait.
-_CACHE_TTL = 5.0          # seconds; well under any sane probe interval
-_cache_lock = threading.Lock()
-_cached: tuple | None = None      # (expires_at_monotonic, body, ready)
+#   2. Refresh runs on a DEDICATED background thread, never a caller's
+#      thread. Every `handle_health()` call -- whether it's the one that
+#      kicks off a refresh or one that arrives while a refresh is already
+#      running -- returns IMMEDIATELY without waiting for that thread.
+#      This is stronger than "don't block on a lock": even the single
+#      caller that triggers the refresh must not be the one EXECUTING it,
+#      because these are sync FastAPI handlers dispatched to the SAME
+#      shared thread pool authenticated requests and the auth middleware's
+#      session lookup also run on. If the refresher ran inline on a
+#      caller's thread, a stuck Postgres connection attempt would pin that
+#      one request-handling worker for however long the stall lasts --
+#      smaller than the naive "every caller blocks" bug, but still real
+#      shared-pool consumption. Spawning a throwaway daemon thread for the
+#      actual I/O removes request-handling capacity from this path
+#      entirely: a stuck dependency call pins only that one disposable
+#      thread, never anything shared with real traffic.
+#
+#   3. Bounded staleness -- a cached result is only trusted for
+#      _MAX_STALE_AGE seconds past when it was computed, refresh or no
+#      refresh. Without this, an indefinitely stuck refresh (e.g. a
+#      Postgres connection attempt with no client-side timeout, hanging on
+#      a dead TCP peer) would let the LAST GOOD result be served forever --
+#      Render would keep routing traffic to an instance whose Postgres has
+#      actually been unreachable for the entire stall, because the readiness
+#      endpoint kept honestly reporting the last time it checked, not the
+#      current truth. Past _MAX_STALE_AGE, readiness stops asserting the old
+#      verdict and reports "stale" (not ready) instead -- an instance that
+#      hasn't had a completed check in that long is not safely assumed
+#      healthy just because nothing has proven otherwise yet.
+_CACHE_TTL = 5.0          # seconds; how long a fresh result is reused as-is
+_MAX_STALE_AGE = 20.0     # seconds; hard ceiling on trusting a stale result,
+                          # even mid-refresh -- see point 3 above
 
-# Returned (uncached, ready=False -> 503) when a caller arrives while the
-# very first check is still in flight and nothing has EVER been cached --
-# i.e. we genuinely don't know yet. Honest and fast beats blocking to find
-# out: Render already retries a failed probe, and this state clears itself
-# within one _CACHE_TTL-scale window regardless.
-_STARTING_STATUS = "starting"
+_state_lock = threading.Lock()   # Guards ONLY the small bookkeeping below
+                                  # (a few attribute assignments) -- NEVER
+                                  # held across dependency I/O, so contention
+                                  # here is always sub-microsecond. This is a
+                                  # different kind of lock use than the
+                                  # earlier (fixed) bug: that one held a lock
+                                  # across a potentially 10s+ Postgres call;
+                                  # this one never does.
+_cached: tuple | None = None         # (computed_at_monotonic, body, ready)
+_refreshing = False                  # True while a background probe is running
+_refresh_started_at: float | None = None
+_generation = 0                      # bumped by reset_health_cache() so a
+                                      # refresh already in flight at reset
+                                      # time can't clobber post-reset state
+                                      # when it eventually completes -- keeps
+                                      # tests (which call reset_health_cache()
+                                      # between cases while a slow mocked
+                                      # check from a prior case may still be
+                                      # running on its own daemon thread)
+                                      # from leaking results across cases.
+
+_STARTING_STATUS = "starting"   # no result has EVER been cached yet; a
+                                 # refresh is in flight -- ask again shortly
+_STALLED_STATUS = "stalled"     # like "starting", but the in-flight refresh
+                                 # has itself been running past _MAX_STALE_AGE
+_STALE_STATUS = "stale"         # a result exists but is older than
+                                 # _MAX_STALE_AGE is willing to trust
 
 # Dependencies whose failure means the service genuinely cannot serve traffic
 # and readiness must report unhealthy (HTTP 503).
 CRITICAL_DEPENDENCIES = ("postgres", "qdrant")
 
-# Tables this service actually reads/writes. Missing any of these means some
-# endpoint is broken even though the connection itself is fine:
+# Tables this service actually reads/writes, derived directly from every raw
+# SQL statement in the online serving path (database/postgres/db.py,
+# pipeline/recommender/services/user_graph_service.py, middlewares/auth.py,
+# controllers/seeding_controller.py) -- not from memory of the schema.
+# Missing any of these means some endpoint is broken even though the
+# connection itself is fine:
 #   session             -- middlewares/auth.py, EVERY authenticated request
-#   user                -- UserGraphService._fetch_user
+#   user                -- UserGraphService._fetch_user, seeding_controller
+#   user_xp              -- UserGraphService._fetch_user (LEFT JOIN on every
+#                           graph build -- a missing table here doesn't fail
+#                           softly like a missing ROW would; the query itself
+#                           errors, _fetch_user returns None, and every
+#                           subsequent /recommend silently falls back to an
+#                           empty cold-start graph, discarding the user's
+#                           real submission/mastery history without ever
+#                           surfacing an error)
 #   topic               -- topic.id <-> ML-slug translation (all mastery I/O)
 #   user_topic_mastery  -- /mastery, /update writes, graph build
-#   user_hlr_state      -- /urgency, /update writes
+#   user_hlr_state      -- /urgency, /update writes, seeding_controller
 #   problem             -- title_slug -> problem_id resolution
 #   recommendation_log  -- /recommend writes, attempt/skip feedback loop
 #   submission          -- graph build
@@ -110,6 +154,7 @@ CRITICAL_DEPENDENCIES = ("postgres", "qdrant")
 REQUIRED_TABLES = (
     "session",
     "user",
+    "user_xp",
     "topic",
     "user_topic_mastery",
     "user_hlr_state",
@@ -226,7 +271,10 @@ def _run_checks() -> tuple[dict, bool]:
     """
     Execute every dependency probe once, uncached. Call handle_health()
     instead unless you specifically want to bypass the throttle -- this one
-    opens a real Postgres connection on every call.
+    opens a real Postgres connection on every call. This is also the
+    function that runs on the dedicated background refresh thread (see
+    _refresh_worker) -- it must never be called on a request-handling thread
+    once a caller other than the refresh trigger is involved.
 
     SECURITY: / and /health are unauthenticated (a platform probe carries no
     token), so the RESPONSE carries only a coarse, non-identifying reason code
@@ -269,79 +317,143 @@ def _run_checks() -> tuple[dict, bool]:
     return body, ready
 
 
+def _refresh_worker(gen: int) -> None:
+    """
+    Runs the real dependency sequence on a DEDICATED, throwaway daemon
+    thread -- never a FastAPI request-handling thread (see the module header,
+    point 2). Started fire-and-forget by handle_health(); no caller ever
+    joins it.
+
+    `gen` pins this run to the generation that was current when it started.
+    If reset_health_cache() bumps the generation before this finishes (e.g. a
+    test resetting state while a slow mocked check from a previous case is
+    still in flight), the result is discarded instead of overwriting
+    newer/reset state -- this worker's own view of `_refreshing` is stale by
+    then anyway.
+    """
+    global _cached, _refreshing, _refresh_started_at
+    try:
+        body, ready = _run_checks()
+    except Exception as exc:
+        # Defense in depth: _run_checks() already catches each dependency's
+        # own errors individually, so this should be unreachable in
+        # practice. But if it somehow isn't (a bug, a bad patch in a test),
+        # an uncaught exception on this background thread must NOT leave
+        # `_refreshing` stuck True forever -- that would permanently wedge
+        # readiness at "stalled"/"starting" even after the real problem
+        # clears, since no future caller would ever see refreshing=False and
+        # try again.
+        log.error("Health probe crashed unexpectedly: %s", exc, exc_info=True)
+        body, ready = {
+            "status": "unhealthy", "service": "recommendation",
+            "dependencies": {},
+        }, False
+    with _state_lock:
+        if gen == _generation:
+            _cached = (time.monotonic(), body, ready)
+            _refreshing = False
+            _refresh_started_at = None
+        # else: superseded by a reset -- discard. Whatever refresh is
+        # current now (if any) owns _refreshing/_refresh_started_at; this
+        # stale run must not touch them.
+
+
+def _starting_body(refresh_started_at: float | None, now: float) -> dict:
+    stalled = (refresh_started_at is not None
+              and (now - refresh_started_at) > _MAX_STALE_AGE)
+    return {
+        "status": _STALLED_STATUS if stalled else _STARTING_STATUS,
+        "service": "recommendation",
+        "dependencies": {},
+    }
+
+
+def _stale_body(age: float) -> dict:
+    return {
+        "status": _STALE_STATUS,
+        "service": "recommendation",
+        "dependencies": {},
+        "stale_for_seconds": round(age, 1),
+    }
+
+
 def handle_health() -> tuple[dict, bool]:
     """
     Return (body, ready) for the readiness endpoints, throttled.
 
-    `ready` is False only when a CRITICAL dependency is down -- the route
-    layer maps that to HTTP 503 so the platform stops reporting the instance
-    as healthy. An optional dependency being down yields status "degraded"
-    but ready=True (still 200): the service can serve, just without that
-    tier.
+    `ready` is False only when a CRITICAL dependency is down (or the result
+    is "starting"/"stalled"/"stale" -- see below) -- the route layer maps
+    that to HTTP 503 so the platform stops reporting the instance as healthy.
+    An optional dependency being down yields status "degraded" but
+    ready=True (still 200): the service can serve, just without that tier.
 
-    Each dependency reports {"status", "reason"}; a "starting" status/503
-    means a check is already in flight and nothing has been cached yet (only
-    possible in the first ~_CACHE_TTL seconds after process start) -- ask
-    again shortly rather than reading it as a real dependency failure.
+    Non-dependency statuses (all ready=False):
+      "starting" -- nothing has ever been cached; a refresh just started or
+                    is already in flight. Only possible in the first
+                    ~_CACHE_TTL seconds after process start.
+      "stalled"  -- same as "starting", but that in-flight refresh has
+                    itself been running longer than _MAX_STALE_AGE (e.g. a
+                    hung Postgres connection attempt with no timeout).
+      "stale"    -- a real result exists but is older than _MAX_STALE_AGE:
+                    the refresh meant to replace it has been stuck for too
+                    long to keep trusting the old verdict. This is the fix
+                    for the specific failure mode where a stalled refresh
+                    would otherwise let a last-known-"ok" result be served
+                    forever, keeping Render's traffic routed to an instance
+                    whose Postgres has actually been unreachable the whole
+                    time.
 
-    Results are cached for _CACHE_TTL seconds and refreshed single-flight,
-    via a NON-BLOCKING lock acquire only -- see the module header for why a
-    caller here must never wait: this runs on the same shared thread pool as
-    authenticated request handlers.
+    Never blocks: the actual dependency sequence always runs on a disposable
+    background thread (see _refresh_worker), and every caller -- including
+    the one that triggers a new refresh -- returns immediately with either a
+    cached/stale/starting verdict, never waiting on that thread.
     """
-    global _cached
+    global _refreshing, _refresh_started_at
 
-    now = time.monotonic()
-    cached = _cached
-    if cached is not None and now < cached[0]:
+    with _state_lock:
+        cached = _cached
+        refreshing = _refreshing
+        refresh_started_at = _refresh_started_at
+        now = time.monotonic()
+        fresh = cached is not None and (now - cached[0]) < _CACHE_TTL
+
+        spawn_gen = None
+        if not fresh and not refreshing:
+            spawn_gen = _generation
+            _refreshing = True
+            _refresh_started_at = now
+            refresh_started_at = now
+
+    if spawn_gen is not None:
+        threading.Thread(
+            target=_refresh_worker, args=(spawn_gen,),
+            daemon=True, name="health-probe-refresh",
+        ).start()
+
+    if fresh:
         return cached[1], cached[2]
 
-    # Stale or absent. Try to become the single refresher -- but NEVER block
-    # waiting for the lock; a parked thread here is a thread-pool worker
-    # authenticated traffic can't use.
-    if not _cache_lock.acquire(blocking=False):
-        # Someone else is already refreshing. Serve the last known result --
-        # stale-but-known beats occupying a shared worker thread to wait for
-        # a fresher one.
-        if cached is not None:
+    if cached is not None:
+        age = now - cached[0]
+        if age <= _MAX_STALE_AGE:
+            # Stale-but-known, within the trust window -- still the best
+            # answer we have while a refresh is (or just became) in flight.
             return cached[1], cached[2]
-        # Nothing has EVER been cached (process just started, and another
-        # thread already claimed the very first check) -- say so honestly
-        # and return immediately rather than guessing or waiting.
-        return {
-            "status": _STARTING_STATUS,
-            "service": "recommendation",
-            "dependencies": {},
-        }, False
+        return _stale_body(age), False
 
-    try:
-        # Re-check: another thread may have refreshed between our first
-        # cache read above and acquiring the lock.
-        cached = _cached
-        now = time.monotonic()
-        if cached is not None and now < cached[0]:
-            return cached[1], cached[2]
-
-        body, ready = _run_checks()
-        # Expiry MUST be measured from when the check FINISHED, not when it
-        # started. _run_checks() can legitimately run long during a real
-        # outage (e.g. Qdrant's own client-side timeout is 10s, well past
-        # _CACHE_TTL=5s) -- computing the expiry from the pre-check `now`
-        # would then produce an entry that is already expired the instant
-        # it's written, so the very next caller re-triggers the full
-        # sequence immediately. That defeats the throttle exactly when an
-        # outage makes it matter most: a slow/failing dependency would keep
-        # every request paying its full timeout instead of being shielded
-        # by the cache. Re-reading the clock here guarantees the cached
-        # result is honoured for a full _CACHE_TTL from actual completion.
-        _cached = (time.monotonic() + _CACHE_TTL, body, ready)
-        return body, ready
-    finally:
-        _cache_lock.release()
+    # No cached result at all -- genuinely unknown yet.
+    return _starting_body(refresh_started_at, now), False
 
 
 def reset_health_cache() -> None:
-    """Drop the cached readiness result. For tests, and for any caller that
-    needs the next probe to reflect reality immediately."""
-    global _cached
-    _cached = None
+    """
+    Drop the cached readiness result and invalidate any refresh currently in
+    flight. For tests, and for any caller that needs the next probe to
+    reflect reality immediately.
+    """
+    global _cached, _refreshing, _refresh_started_at, _generation
+    with _state_lock:
+        _cached = None
+        _refreshing = False
+        _refresh_started_at = None
+        _generation += 1

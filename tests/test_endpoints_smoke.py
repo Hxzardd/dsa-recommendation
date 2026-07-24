@@ -31,6 +31,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+import time
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -150,12 +151,27 @@ class TestHandlersDoNotBlockTheEventLoop(unittest.TestCase):
 class TestHealthEndpoints(_EndpointCase):
 
     def setUp(self):
-        # Readiness results are cached (see health_controller's throttle), so
-        # a previous test's verdict would otherwise leak into this one.
-        import controllers.health_controller as hc
-        hc.reset_health_cache()
+        self._drain_health_refresh()
 
     tearDown = setUp
+
+    def _drain_health_refresh(self, timeout=15.0):
+        """
+        Wait for any in-flight background readiness refresh to finish before
+        resetting. handle_health() always runs the real dependency sequence
+        on a disposable daemon thread (see controllers/health_controller.py)
+        rather than the calling thread -- if a test's mocks go out of scope
+        before that thread reaches its _check_postgres()/_check_qdrant()
+        call, it would go on to call the REAL, unpatched function once it
+        does, potentially hitting real infrastructure from a stray thread
+        while a later, unrelated test runs. Waiting for `_refreshing` to
+        clear drains it deterministically either way (mocked or real).
+        """
+        import controllers.health_controller as hc
+        deadline = time.monotonic() + timeout
+        while hc._refreshing and time.monotonic() < deadline:
+            time.sleep(0.02)
+        hc.reset_health_cache()
 
     def test_live_is_always_200_without_touching_dependencies(self):
         with self._client() as c:
@@ -163,24 +179,48 @@ class TestHealthEndpoints(_EndpointCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["status"], "alive")
 
+    def _wait_for_health_cache(self, hc, timeout=2.0):
+        """
+        handle_health() never blocks the calling request for the real check
+        -- it always kicks the dependency sequence off on a disposable
+        background thread and returns an immediate 'starting' verdict (see
+        controllers/health_controller.py). Poll for that thread to land
+        before asserting on the real result, the way a caller hitting the
+        endpoint twice in a row effectively would.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if hc._cached is not None:
+                return
+            time.sleep(0.01)
+        self.fail("background health refresh never completed")
+
     def test_root_and_health_report_ready_when_dependencies_are_up(self):
         import controllers.health_controller as hc
+        hc.reset_health_cache()
         with self._client() as c, \
              patch.object(hc, "_check_postgres", return_value=("ok", "ready", "d")), \
              patch.object(hc, "_check_qdrant", return_value=("ok", "ready", "d")), \
              patch.object(hc, "_check_neo4j", return_value=("ok", "ready", "d")):
             for path in ("/", "/health"):
+                hc.reset_health_cache()
+                c.get(path)   # triggers the background refresh
+                self._wait_for_health_cache(hc)
                 r = c.get(path)
                 self.assertEqual(r.status_code, 200, path)
                 self.assertEqual(r.json()["status"], "ok", path)
 
     def test_root_and_health_return_503_when_a_critical_dependency_is_down(self):
         import controllers.health_controller as hc
+        hc.reset_health_cache()
         with self._client() as c, \
              patch.object(hc, "_check_postgres", return_value=("down", "unreachable", "boom")), \
              patch.object(hc, "_check_qdrant", return_value=("ok", "ready", "d")), \
              patch.object(hc, "_check_neo4j", return_value=("ok", "ready", "d")):
             for path in ("/", "/health"):
+                hc.reset_health_cache()
+                c.get(path)   # triggers the background refresh
+                self._wait_for_health_cache(hc)
                 r = c.get(path)
                 self.assertEqual(r.status_code, 503, path)
                 self.assertEqual(r.json()["status"], "unhealthy", path)
