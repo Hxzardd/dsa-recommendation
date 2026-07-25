@@ -66,7 +66,7 @@ from pipeline.recommender.services.user_graph_service import UserGraphService
 from pipeline.recommender.services.pool_generation import PoolGenerationOrchestrator
 from pipeline.recommender.services.candidate_filtering import CandidateFilteringLayer
 from pipeline.recommender.services.candidate_store import CandidateStore, InMemoryCandidateStore
-from pipeline.recommender.services.heuristic_ranker import HeuristicRanker
+from pipeline.recommender.services.lightgbm_ranker import rank_candidates
 from pipeline.recommender.services.diversity_mixer import DiversityMixer
 
 log = logging.getLogger(__name__)
@@ -238,8 +238,17 @@ def get_recommendations(
 
     staged = store.save(user_id, ranker_rows, gen_result.difficulty_plan.to_dict())
 
-    ranker = HeuristicRanker()
-    ranked_rows = ranker.top_k(ranker_rows, k=max(k * 3, k))   # over-fetch for the mixer to diversify from
+    # rank_candidates() picks heuristic / lightgbm / hybrid per the RANKER
+    # env var (defaults to heuristic -- unchanged behaviour with no
+    # configuration) and always returns the same shape HeuristicRanker.top_k()
+    # does, falling back to heuristic automatically if the ML model is
+    # missing/mismatched/fails -- see pipeline/recommender/services/lightgbm_ranker.py.
+    ranked_rows = rank_candidates(
+        ranker_rows=ranker_rows,
+        merged_candidates=gen_result.merged_candidates,
+        graph=graph, plan=gen_result.difficulty_plan,
+        k=max(k * 3, k),   # over-fetch for the mixer to diversify from
+    )
 
     # DiversityMixer works on MergedCandidate-shaped objects; ranked_rows are
     # plain dicts (post-ranker). Re-attach onto the original MergedCandidate
