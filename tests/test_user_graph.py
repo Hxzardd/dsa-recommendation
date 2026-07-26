@@ -981,6 +981,53 @@ class TestEdgeMerge(unittest.TestCase):
         self.assertEqual(g.problem_edges["p1"].edge_type, EdgeType.SOLVED)
 
 
+class TestMasteredConceptsCache(unittest.TestCase):
+    """
+    mastered_concepts() is called once per candidate (via is_locked()) from
+    every pool's self-filter and again from CandidateFilteringLayer, so it's
+    cached per-threshold on the UserGraph instance and invalidated whenever
+    concept_edges changes. These tests lock in that the cache never returns
+    stale data across add_concept_edge/update_concept_state mutations, and
+    that repeated calls between mutations are consistent.
+    """
+
+    def test_repeated_calls_are_consistent(self):
+        g = UserGraph(user=UserNode(user_id="u1"))
+        g.add_concept_edge(ConceptEdge("arrays", EdgeType.MASTERED, mastery_score=0.9))
+        first = g.mastered_concepts()
+        second = g.mastered_concepts()
+        self.assertEqual(first, second)
+        self.assertIn("arrays", second)
+
+    def test_cache_invalidated_by_add_concept_edge(self):
+        g = UserGraph(user=UserNode(user_id="u1"))
+        g.add_concept_edge(ConceptEdge("arrays", EdgeType.LEARNING, mastery_score=0.3))
+        self.assertNotIn("arrays", g.mastered_concepts())   # populate the cache at 0.3
+
+        g.add_concept_edge(ConceptEdge("arrays", EdgeType.MASTERED, mastery_score=0.9))
+        self.assertIn("arrays", g.mastered_concepts(),
+                      "mastered_concepts() returned a stale cached result "
+                      "after add_concept_edge raised mastery past the threshold")
+
+    def test_cache_invalidated_by_update_concept_state(self):
+        g = UserGraph(user=UserNode(user_id="u1"))
+        g.update_concept_state("arrays", mastery_score=0.3)
+        self.assertNotIn("arrays", g.mastered_concepts())   # populate the cache at 0.3
+
+        g.update_concept_state("arrays", mastery_score=0.9)
+        self.assertIn("arrays", g.mastered_concepts(),
+                      "mastered_concepts() returned a stale cached result "
+                      "after update_concept_state raised mastery past the threshold")
+
+    def test_cache_is_per_threshold(self):
+        g = UserGraph(user=UserNode(user_id="u1"))
+        g.add_concept_edge(ConceptEdge("arrays", EdgeType.MASTERED, mastery_score=0.75))
+        self.assertIn("arrays", g.mastered_concepts(threshold=0.7))
+        self.assertNotIn("arrays", g.mastered_concepts(threshold=0.8))
+        # re-querying the first threshold again must still be correct
+        self.assertIn("arrays", g.mastered_concepts(threshold=0.7))
+
+
 # ===========================================================================
 # 8. Offline CC edge loader
 # ===========================================================================

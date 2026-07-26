@@ -110,7 +110,18 @@ class AdaptiveDifficultyController:
         n_weak      = len(graph.weak_concepts(SEVERITY_WEAK_THRESHOLD))
         n_urgent    = len(graph.urgent_concepts(URGENCY_BOOST_THRESHOLD))
         n_overdue   = self._count_overdue(graph)
-        is_cold     = len(graph.concept_edges) == 0 or not graph.solved_ids
+        # concept_edges (not solved_ids) is the right cold-start signal: a
+        # user with imported LeetCode/Codeforces history (seeding_controller.py
+        # -> save_user_mastery/save_user_hlr) has real per-topic mastery/HLR
+        # data on concept_edges but ZERO platform submissions -- solved_ids
+        # is populated exclusively from the `submission` table
+        # (UserGraphService._load_submissions), which seeding never writes
+        # to. Gating on `or not graph.solved_ids` treated every seeded user
+        # as cold-start regardless of how much real mastery they'd imported,
+        # handing them the cold-start pool weights and the extra-gentle
+        # MIX_COLD_START difficulty mix instead of the level-appropriate
+        # ones their actual seeded mastery warrants.
+        is_cold     = len(graph.concept_edges) == 0
 
         level = self._level(avg_mastery)
 

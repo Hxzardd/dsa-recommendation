@@ -42,14 +42,19 @@ _ZPD_HALF_RANGE = max(ZPD_OPTIMAL - ZPD_LO, ZPD_HI - ZPD_OPTIMAL)   # 0.13
 # a meaningfully stronger signal past this point.
 POOL_AGREEMENT_SATURATION = 3
 
-# Hand-tuned weights, sum to 1.0. Adjust these directly as real usage data
-# comes in -- no retraining needed, just edit the numbers.
-WEIGHT_PROXIMITY  = 0.45
-WEIGHT_POOL_AGREE = 0.25
-WEIGHT_URGENCY    = 0.20
-WEIGHT_SIMILARITY = 0.10
+# Hand-tuned weights, sum to 1.0 (all five -- WEIGHT_DIFFICULTY_ALIGNMENT is
+# a real component of score_one()'s output, not a separate bonus scale).
+# Adjust these directly as real usage data comes in -- no retraining
+# needed, just edit the numbers, keeping the five in proportion.
+WEIGHT_PROXIMITY  = 0.4275
+WEIGHT_POOL_AGREE = 0.2375
+WEIGHT_URGENCY    = 0.19
+WEIGHT_SIMILARITY = 0.095
 WEIGHT_DIFFICULTY_ALIGNMENT = 0.05
-assert abs((WEIGHT_PROXIMITY + WEIGHT_POOL_AGREE + WEIGHT_URGENCY + WEIGHT_SIMILARITY) - 1.0) < 1e-9
+assert abs(
+    (WEIGHT_PROXIMITY + WEIGHT_POOL_AGREE + WEIGHT_URGENCY + WEIGHT_SIMILARITY
+     + WEIGHT_DIFFICULTY_ALIGNMENT) - 1.0
+) < 1e-9
 
 
 @dataclass
@@ -114,6 +119,7 @@ class HeuristicRanker:
 
         urgency = row.get("max_urgency")
         urgency_boost = urgency if urgency is not None else 0.0
+        urgency_boost = max(0.0, min(1.0, urgency_boost))   # clamp defensively
 
         similarity = row.get("best_pool_score")
         similarity_score = similarity if similarity is not None else 0.0

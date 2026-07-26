@@ -49,6 +49,17 @@ from pipeline.recommender.pools.base_pool import (
 # draws from. "array" alone has 790 tagged problems in this catalog.
 STARTER_CONCEPTS = ["array", "string", "hash_map"]
 
+# How many of the easiest STARTER_CONCEPTS problems NoveltyPool's cold-start
+# fallback skips past before taking its own slice (see
+# BasePool._lowest_difficulty_by_concept's `skip` docstring). Generous
+# enough to clear CoursePathPool's own cold-start draw comfortably: at
+# cold-start weights (adaptive_difficulty.py's is_cold branch) A's requested
+# count is the largest of any pool and, even at the MAX_PER_POOL_ABSOLUTE
+# ceiling, stays well under this value -- so the two pools' cold-start
+# slices don't overlap in practice, without the two pools needing to know
+# anything about each other's actual draw count.
+NOVELTY_COLD_START_SKIP = 20
+
 
 class CoursePathPool(BasePool):
     """
@@ -156,6 +167,15 @@ class WeaknessPool(BasePool):
                        if e.mastery_score < 0.4]
         target = list(weak | set(low_mastery))
         if not target:
+            # Intentionally empty at cold start, not a gap to fill: "weak"
+            # is a RELATIVE judgement (a concept the user is doing worse on
+            # than their own average, or has attempted and struggled with)
+            # -- there is no such comparison to make for a user with zero
+            # concept_edges. Any candidate this pool proposed here would
+            # have to invent a weakness that doesn't exist yet, which is
+            # exactly what we must not do. Once the user has any real
+            # attempt history, weak_concepts()/low_mastery populate
+            # normally and this pool activates on genuine signal.
             return []
         return self._draw_with_mix(target, n, exclude, mix, graph=graph)
 
@@ -193,6 +213,14 @@ class SpacedReviewPool(BasePool):
 
         target = list(urgent | overdue)
         if not target:
+            # Intentionally empty at cold start: spaced review is defined
+            # entirely in terms of PAST study events -- HLR urgency needs a
+            # last_review timestamp, SM-2 overdue-ness needs a prior
+            # next_review_date. A user with zero concept_edges has never
+            # studied anything, so there is nothing due for review yet, by
+            # definition -- not a missing signal to compensate for. Once
+            # the user has solved even one problem, urgent_concepts()/
+            # overdue populate from real history and this pool activates.
             return []
         return self._draw_with_mix(target, n, exclude, mix, graph=graph)
 
@@ -217,7 +245,20 @@ class StretchPool(BasePool):
             # if nothing partial, stretch on mastered concepts instead
             stretch_concepts = list(graph.mastered_concepts())
         if not stretch_concepts:
-            return []
+            # Genuinely cold start: no concept has any mastery to stretch
+            # from. Unlike WeaknessPool/SpacedReviewPool, this pool's
+            # ALLOWED_BANDS=(medium, hard) restriction is itself a real,
+            # non-fabricated signal of what "stretch" means here -- draw
+            # STARTER_CONCEPTS through the pool's own existing band-mix
+            # mechanism (_draw_with_mix already renormalises to just
+            # medium/hard for this pool) instead of inventing a mastery
+            # number. This is a genuinely different slice of the catalog
+            # from CoursePathPool/NoveltyPool's cold-start fallback, which
+            # both rank by absolute difficulty_score with no band
+            # restriction at all -- no new mechanism, just this pool using
+            # the one it already has for every other case instead of
+            # bailing out to nothing.
+            return self._draw_with_mix(STARTER_CONCEPTS, n, exclude, mix, graph=graph)
         return self._draw_with_mix(stretch_concepts, n, exclude, mix, graph=graph)
 
 
@@ -256,10 +297,23 @@ class NoveltyPool(BasePool):
             # cold-start branch (see _lowest_difficulty_by_concept's
             # docstring) -- ranks by actual difficulty_score instead of a
             # fixed EASY_BAND this catalog has no data in.
+            #
+            # skip=NOVELTY_COLD_START_SKIP: for a genuinely cold user this
+            # queries the SAME STARTER_CONCEPTS with the SAME exclude set as
+            # CoursePathPool's own cold-start fallback -- without an offset
+            # both pools would return the identical candidates, and
+            # CandidateFilteringLayer's dedup would just relabel them under
+            # both pool names, artificially inflating pool_agreement in the
+            # ranker for what is really one signal, not two agreeing ones.
+            # Skipping past CoursePathPool's slice keeps this pool's actual
+            # purpose (introduce something the user hasn't already been
+            # shown) genuinely true at cold start too, not just once the
+            # user has real mastered/novel-reachable concepts.
             fallback = [c for c in STARTER_CONCEPTS if c not in seen]
             if not fallback:
                 return []
-            return self._lowest_difficulty_by_concept(fallback, n, exclude, graph=graph)
+            return self._lowest_difficulty_by_concept(
+                fallback, n, exclude, graph=graph, skip=NOVELTY_COLD_START_SKIP)
         return self._draw_with_mix(novel, n, exclude, mix, graph=graph)
 
 

@@ -39,7 +39,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from pipeline.recommender.models.user_graph import UserGraph, EdgeType
+from pipeline.recommender.models.user_graph import UserGraph
 from pipeline.recommender.pools.base_pool import Candidate
 
 
@@ -55,6 +55,9 @@ ZPD_HI      = 0.80
 ZPD_OPTIMAL = 0.68
 
 
+_UNSET = object()   # distinguishes "not computed yet" from a genuine None result
+
+
 @dataclass
 class MergedCandidate:
     """One problem, deduplicated across every pool that proposed it."""
@@ -64,6 +67,11 @@ class MergedCandidate:
     topic_tags:         list
     difficulty_score:   Optional[float]
     predicted_success:  Optional[float] = None   # filled by apply_zpd_filter
+    # Cache for CandidateFilteringLayer._topic_mastery_and_urgency -- see its
+    # docstring. Not part of this object's public shape (excluded from
+    # equality/repr so it doesn't leak into any existing comparison/debug
+    # output), just a memoization slot.
+    _topic_stats_cache: object = field(default=_UNSET, repr=False, compare=False)
 
     @property
     def pool_count(self) -> int:
@@ -109,7 +117,6 @@ class CandidateFilteringLayer:
                  success_estimator: Optional[Callable[["MergedCandidate", UserGraph], float]] = None):
         self.graph = graph
         self._success_estimator = success_estimator or self._default_success_estimator
-        self._prereq_index = self._build_prereq_index(graph)
 
     # ------------------------------------------------------------------ public
 
@@ -167,31 +174,15 @@ class CandidateFilteringLayer:
     def _is_locked(self, c: Candidate) -> bool:
         """
         A candidate is locked if ANY of its topic_tags requires a prerequisite
-        concept the user hasn't mastered yet.
+        concept the user hasn't mastered yet. Delegates to graph.is_locked()
+        -- the single source of truth for prereq gating (see its docstring),
+        also used by every pool's own self-filter -- instead of maintaining
+        a second, independent reverse-index/mastered-set implementation that
+        could silently diverge from it (e.g. if is_locked()'s default
+        mastery_threshold is ever retuned, a local copy here would not
+        follow along).
         """
-        if not c.topic_tags:
-            return False
-        mastered = set(self.graph.mastered_concepts())
-        for tag in c.topic_tags:
-            required = self._prereq_index.get(tag, [])
-            for prereq_slug in required:
-                if prereq_slug not in mastered:
-                    return True
-        return False
-
-    def _build_prereq_index(self, graph: UserGraph) -> dict:
-        """
-        graph.cc_edges is keyed by source concept, with PREREQ edges pointing
-        to the concept it unlocks (source is prerequisite OF target). Build
-        the reverse index here: target -> [required prerequisite slugs],
-        which is what _is_locked needs to check a candidate's own tags.
-        """
-        reverse = {}
-        for src, edges in graph.cc_edges.items():
-            for e in edges:
-                if e.edge_type == EdgeType.PREREQ:
-                    reverse.setdefault(e.target_slug, []).append(src)
-        return reverse
+        return self.graph.is_locked(c.topic_tags)
 
     # ------------------------------------------------------------- merge
 
@@ -227,6 +218,42 @@ class CandidateFilteringLayer:
                     )
         return list(merged.values()), dup_count
 
+    # ------------------------------------------------------------- shared per-candidate stats
+
+    def _topic_mastery_and_urgency(self, mc: MergedCandidate, graph: UserGraph) -> tuple:
+        """
+        Average BKT mastery and max HLR urgency across mc's topic tags --
+        (None, None) if none of the tags have a ConceptEdge yet.
+
+        Computed once per candidate and cached on the MergedCandidate itself
+        (not on this layer instance) because _default_success_estimator
+        (called from run()/_apply_zpd_filter) and to_ranker_input need the
+        exact same aggregation, and the two are commonly called as two
+        separate steps against the SAME MergedCandidate objects within one
+        recommendation request (see pipeline/recommender/services/
+        recommend.py and pool_generation.py, which each construct their own
+        CandidateFilteringLayer instance around the same already-filtered
+        merged list) -- caching on the object survives across those
+        separate instances, unlike caching on self.
+        """
+        if mc._topic_stats_cache is not _UNSET:
+            return mc._topic_stats_cache
+
+        masteries = [
+            graph.concept_edges[t].mastery_score
+            for t in mc.topic_tags
+            if t in graph.concept_edges
+        ]
+        urgencies = [
+            graph.concept_edges[t].urgency
+            for t in mc.topic_tags
+            if t in graph.concept_edges
+        ]
+        avg_mastery = sum(masteries) / len(masteries) if masteries else None
+        max_urgency = max(urgencies) if urgencies else None
+        mc._topic_stats_cache = (avg_mastery, max_urgency)
+        return mc._topic_stats_cache
+
     # ------------------------------------------------------------- ZPD filter
 
     def _default_success_estimator(self, mc: MergedCandidate, graph: UserGraph) -> float:
@@ -246,15 +273,10 @@ class CandidateFilteringLayer:
         if not mc.topic_tags:
             return ZPD_OPTIMAL
 
-        masteries = [
-            graph.concept_edges[t].mastery_score
-            for t in mc.topic_tags
-            if t in graph.concept_edges
-        ]
-        if not masteries:
+        avg_mastery, _ = self._topic_mastery_and_urgency(mc, graph)
+        if avg_mastery is None:
             return ZPD_OPTIMAL
 
-        avg_mastery = sum(masteries) / len(masteries)
         difficulty = mc.difficulty_score if mc.difficulty_score is not None else 0.5
 
         # Sigmoid centered so that mastery == difficulty gives ~0.5, and
@@ -290,22 +312,15 @@ class CandidateFilteringLayer:
         """
         rows = []
         for mc in merged:
-            masteries = [
-                self.graph.concept_edges[t].mastery_score
-                for t in mc.topic_tags if t in self.graph.concept_edges
-            ]
-            urgencies = [
-                self.graph.concept_edges[t].urgency
-                for t in mc.topic_tags if t in self.graph.concept_edges
-            ]
+            avg_mastery, max_urgency = self._topic_mastery_and_urgency(mc, self.graph)
             rows.append({
                 "problem_id":        mc.problem_id,
                 "pool_sources":      mc.pool_sources,
                 "pool_count":        mc.pool_count,
                 "topic_tags":        mc.topic_tags,
                 "difficulty_score":  mc.difficulty_score,
-                "avg_mastery":       round(sum(masteries) / len(masteries), 4) if masteries else None,
-                "max_urgency":       round(max(urgencies), 4) if urgencies else None,
+                "avg_mastery":       round(avg_mastery, 4) if avg_mastery is not None else None,
+                "max_urgency":       round(max_urgency, 4) if max_urgency is not None else None,
                 "predicted_success": mc.predicted_success,
                 "best_pool_score":   mc.best_score,
             })
