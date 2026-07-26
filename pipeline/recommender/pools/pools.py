@@ -17,6 +17,8 @@ _draw_with_mix on BasePool does the actual proportional splitting.
 
 from __future__ import annotations
 
+import math
+
 from pipeline.recommender.models.user_graph import UserGraph, EdgeType
 from pipeline.recommender.models.user_state import UserStateVector
 from pipeline.recommender.pools.base_pool import (
@@ -96,6 +98,22 @@ class CoursePathPool(BasePool):
             # difficulty_score ascending and takes the n lowest available,
             # rather than filtering into a band that may not exist.
             return self._lowest_difficulty_by_concept(STARTER_CONCEPTS, n, exclude, graph=graph)
+
+        # PERSONALIZATION FIX (cold-start "common path"): a functionally-cold
+        # user (imported LC/CF history but mastery landed on the flat floor,
+        # so every topic reads as equally "in progress") has target_concepts =
+        # ALL their topics. _draw_with_mix hands that whole list to a single
+        # Qdrant MatchAny scroll, which returns problems in catalog order --
+        # the SAME order for every such user, so everyone got one shared common
+        # path regardless of what they'd actually been practicing. When the
+        # user has a real per-topic activity signal, draw concept-by-concept in
+        # engagement-priority order instead, so the topics THIS user actually
+        # worked on surface first and two different import histories produce two
+        # different slates. No-op for a truly no-history user (engagement 0
+        # everywhere) -- they fall through to the original uniform draw.
+        if graph.has_engagement_signal():
+            return self._draw_by_engagement_priority(
+                target_concepts, n, exclude, mix, graph)
         return self._draw_with_mix(target_concepts, n, exclude, mix, graph=graph)
 
 

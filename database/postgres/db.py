@@ -106,6 +106,18 @@ def get_connection():
             minconn=1,
             maxconn=10,
             dsn=DATABASE_URL,
+            # Bounds the TCP/TLS connection-establishment phase only (never
+            # a running query) -- without it, a new connection to a
+            # dead/unreachable peer can hang for the OS's own TCP timeout
+            # (can be well over a minute), during which the calling thread
+            # (an authenticated request, a mastery read, the readiness
+            # probe's background refresh -- see controllers/
+            # health_controller.py's _MAX_STALE_AGE, which this directly
+            # complements) is stuck with no bound of its own. 10s is
+            # generous for a healthy connection (typically sub-second even
+            # over the internet) and turns an indefinite hang into a bounded
+            # failure everywhere this pool is used.
+            connect_timeout=10,
         )
 
     try:

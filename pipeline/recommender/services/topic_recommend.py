@@ -41,12 +41,21 @@ def recommend_topic(graph: UserGraph) -> tuple[str, str]:
 
     mastered = set(graph.mastered_concepts())
 
-    in_progress = [
-        (s, e.mastery_score) for s, e in graph.concept_edges.items()
-        if s not in mastered
-    ]
+    in_progress = [s for s, e in graph.concept_edges.items() if s not in mastered]
     if in_progress:
-        best = max(in_progress, key=lambda pair: pair[1])[0]
+        # "Finish what's nearly done": highest mastery in-progress topic wins.
+        # But a functionally-cold user has every in-progress topic tied at the
+        # same flat mastery floor -- max() would then just return whichever
+        # topic happens to iterate first (dict/insertion order), identical for
+        # every such user. Break that tie by the user's own imported activity
+        # (concept_engagement) so two import users with different histories get
+        # different next-topic picks instead of one shared common path. Zero
+        # for a no-history user, so this changes nothing when mastery already
+        # differentiates the topics.
+        best = max(
+            in_progress,
+            key=lambda s: (graph.concept_mastery(s), graph.concept_engagement(s)),
+        )
         return best, "in_progress"
 
     seen = set(graph.concept_edges.keys())

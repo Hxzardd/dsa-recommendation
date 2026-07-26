@@ -20,7 +20,13 @@ qdrant_storage_v2/
 # ==========================
 # DSA Engine generated artifacts
 # ==========================
+POSTMAN_GUIDE.md
 
+ API_ENDPOINTS.md 
+ ARCHITECTURE_QA.md 
+ BACKEND_ML_INTEGRATION.md 
+ STATEUPDATESERVICE_DECISION.md
+ pid_tags_scratch.json
 # Vector pool outputs
 data/vector_pool/
 vector_pool/
