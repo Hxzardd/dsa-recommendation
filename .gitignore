@@ -44,3 +44,5 @@ pipeline/graphs/rgcn_artifacts/
 *.npz
 *.pickle
 *.pkl
+# Training pipeline generated artifacts (feature registry exports, datasets, reports)
+training/artifacts/
