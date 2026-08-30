@@ -56,6 +56,14 @@ Modules: `app/orchestrator` (analyze, classify) · `app/llm` (vLLM client + fake
 · `app/rule_engine` · `app/prompt_builder` · `app/parser` · `app/validator` ·
 `app/security` · `app/models` · `app/api` · `app/middleware` · `app/config`.
 
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Pipeline, deep orchestrator, LLM seam, degradation, module map |
+| [docs/API.md](docs/API.md) | `/analyze` + `/classify-approach` schemas, auth, status codes |
+| [.env.example](.env.example) | All configuration (vLLM, auth, budgets) |
+
 ## Quick start
 
 Requires **Python 3.12+**. With [uv](https://docs.astral.sh/uv/):
