@@ -27,6 +27,11 @@ Create a `.env` file at the repo root:
 ```
 DATABASE_URL=postgresql://user:password@localhost:5432/dsa_dev
 
+# Shared server-to-server secret. Set the SAME value in the backend's
+# dsa-website/.env so the Judge0 submission webhook can call POST /update
+# without a user session. See docs/INTEGRATION.md.
+ML_SERVICE_TOKEN=<same value as the backend>
+
 # Only needed for GET /recommend (the full ML pipeline) -- POST /update,
 # GET /mastery, GET /urgency, and the seeding routes only need DATABASE_URL.
 QDRANT_URL=...
@@ -55,19 +60,18 @@ Then create a test user row (needed for `GET /mastery`, `GET /urgency`, and
 the seeding routes to have anything to read):
 
 ```bash
-python seed_test_session.py postman_demo_user
+python scripts/seed_test_session.py postman_demo_user
 # optionally link handles to exercise the seeding routes:
-python seed_test_session.py postman_demo_user --cf my_cf_handle --lc my_lc_handle
+python scripts/seed_test_session.py postman_demo_user --cf my_cf_handle --lc my_lc_handle
 ```
 
-**Auth note for this commit (813b4e9):** `POST /update`, `GET /mastery`,
-`GET /urgency`, and `GET /recommend` have no auth at all -- call them
-directly. Only `POST /seed_hlr/{user_id}` and `POST /seed_bkt/{user_id}`
-check anything, and it's a documented placeholder (`routes/seeding.py`'s
-`require_same_user`): an `X-User-Id` header that must equal the path's
-`user_id`, with no real signature/session verification behind it. See that
-file's module docstring before relying on this for anything beyond local
-testing.
+**Auth note:** every route except the health/docs paths now requires
+`Authorization: Bearer <token>` (`middlewares/auth.py`). The token is either a
+per-user **session token** (validated against the shared `session` table) or
+the shared **`ML_SERVICE_TOKEN`** for server-to-server calls like the Judge0
+submission webhook. Mint a session token for local testing with
+`scripts/seed_test_session.py` (above), or set `ML_SERVICE_TOKEN` in `.env` and
+send it as the Bearer token. Full auth model: [docs/API.md](docs/API.md#auth).
 
 ## 4. Run the API server
 

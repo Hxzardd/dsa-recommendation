@@ -1,157 +1,98 @@
 <div align="center">
 
-![Forktober GIF](https://raw.githubusercontent.com/ACM-VIT/.github/master/profile/acm_gif_banner.gif)
+![ACM VIT](https://raw.githubusercontent.com/ACM-VIT/.github/master/profile/acm_gif_banner.gif)
 
-<!-- Project Title -->
-<h2>PROJECT TITLE</h2>
+<h2>DSA Recommendation Engine</h2>
 
-<p>Short description about the project. One or two lines that explain what it does and who it’s for.</p>
+<p>The machine-learning service behind the Knode DSA platform — it scores each
+submission, tracks topic mastery, schedules spaced-repetition reviews, and
+recommends what a learner should solve next.</p>
 
 <p>
   <a href="https://acmvit.in/" target="_blank">
     <img alt="made-by-acm" src="https://img.shields.io/badge/MADE%20BY-ACM%20VIT-orange?style=flat-square&logo=acm&link=acmvit.in" />
   </a>
-  <!-- Uncomment the below line to add the license badge. Make sure the right license badge is reflected. -->
-  <!-- <img alt="license" src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" /> -->
-  <!-- Add forks/stars/tech stack badges from https://shields.io/ as needed -->
+  <img alt="python" src="https://img.shields.io/badge/python-3.12-blue?style=flat-square&logo=python" />
+  <img alt="fastapi" src="https://img.shields.io/badge/FastAPI-stateless-009688?style=flat-square&logo=fastapi" />
 </p>
 
 </div>
 
 ---
 
-## Table of Contents
+## What it does
 
-- [About](#about)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [Hacktoberfest](#hacktoberfest)
-- [Submitting a Pull Request](#submitting-a-pull-request)
-- [Guidelines for Pull Request](#guidelines-for-pull-request)
-- [Authors](#authors)
+This is a **FastAPI** service that pairs with the [`dsa-website`](../dsa-website)
+backend (they share one Postgres database). It has two jobs:
 
----
+1. **Score a submission** (`POST /update`) — given a learner's submission and
+   behavioural telemetry, it formulates the submission score and computes the
+   updated **BKT** topic mastery and **HLR** review schedule, and returns them.
+   It is a **stateless calculator**: the backend owns all persistence of user
+   mastery.
+2. **Recommend what's next** (`GET /recommend`, `/topic/recommend`, …) — a
+   candidate-generation → filtering → LightGBM-ranking pipeline over problem
+   embeddings (Qdrant) and a per-user concept graph (Neo4j/Redis).
 
-## About
+```
+submit → backend → POST /update (telemetry + current mastery)
+                 → score + BKT + HLR  ←  this service
+                 → backend persists mastery / XP / reviews
+```
 
-Write a compelling overview about the project: the problem it solves, the motivation, and what makes it unique. Include a short roadmap or key features if helpful.
+## Documentation
 
----
+| Doc | What's in it |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, the two responsibilities, data stores, invariants |
+| [docs/API.md](docs/API.md) | Every endpoint, request/response schemas, auth model |
+| [docs/INTEGRATION.md](docs/INTEGRATION.md) | The backend ↔ ML contract, env vars, XP policy, retry path |
+| [RUNNING.md](RUNNING.md) | Install, run, and test end-to-end |
+| [scripts/README.md](scripts/README.md) | Operational, data-generation and training scripts |
 
-## Quick Start
+## Quick start
+
+Requires **Python 3.12** and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-# 1) Fork and clone
-# Click Fork on GitHub, then:
- git clone https://github.com/<your-username>/<repo>.git
- cd <repo>
-
-# 2) Create a branch
- git checkout -b feat/your-feature
-
-# 3) Install dependencies
-# paste your install command(s) here
-
-# 4) Run the project
-# paste your run command(s) here
+uv sync                                  # install deps
+cp .env.example .env                     # then fill in DATABASE_URL etc.
+uvicorn main:app --reload --port 8000    # run — Swagger at /docs
+uv run pytest tests/ -q                  # test (runs offline)
 ```
 
----
+See [RUNNING.md](RUNNING.md) for Postgres setup, Qdrant/Neo4j config, and the
+end-to-end integration test. The core BKT/HLR/scoring/telemetry logic runs
+without any external service.
 
-## Usage
+## Project layout
 
-Provide examples and code snippets showing how to use the project. Add screenshots or GIFs if applicable.
-
-```console
-# examples
-<your-cli> init
-<your-cli> run
 ```
-
----
+main.py                     FastAPI app + startup graph load
+routes/                     thin HTTP routers  (submission, mastery, recommendation, seeding, health)
+controllers/                request handlers   (orchestrate the pipeline)
+models/schemas/             pydantic request/response models
+middlewares/auth.py         session-token + ML_SERVICE_TOKEN auth
+pipeline/
+  recommender/              scoring.py · bkt.py · hlr.py · telemetry.py · ranking.py · pools/ · services/
+  ingestion/ · graphs/ · embeddings/
+database/                   postgres / qdrant / neo4j clients
+training/                   LightGBM dataset generation + training
+scripts/                    one-off ops / data / training scripts (run from repo root)
+tests/                      offline unit + endpoint smoke tests
+docs/                       architecture, API, integration
+```
 
 ## Contributing
 
-We welcome contributions of all kinds! Please read our [Contributing Guidelines](contributing.md) to get started quickly and make your PRs count.
-
----
-
-## Hacktoberfest
-
-<p>
-  <a href="https://hacktoberfest.com/" target="_blank">
-<img alt="hactoberfest" src="https://img.shields.io/github/hacktoberfest/2025/tmrowco/tmrowapp-contrib?style=flat-square&logo=acm&labelColor=indigo&link=hacktoberfest.com"/>
-  </a>
-
-<!-- Badge Format
-https://img.shields.io/github/hacktoberfest/:year/:user/:repo
--->
-
-Join us for Hacktoberfest! Quality > quantity.
-
-- Aim for meaningful, well‑scoped PR/MRs that solve real issues.
-- Non‑code contributions (docs, design, tutorials) are welcome via PR.
-- Full participation details: https://hacktoberfest.com/participation
-
----
-
-## Submitting a Pull Request
-
-1. Fork the repository (top‑right on GitHub)
-2. Clone your fork locally:
-   ```bash
-   git clone <HTTPS-ADDRESS>
-   cd <NAME-OF-REPO>
-   ```
-3. Create a new branch:
-   ```bash
-   git checkout -b <your-branch-name>
-   ```
-4. Make your changes and stage them:
-   ```bash
-   git add .
-   ```
-5. Commit your changes:
-   ```bash
-   git commit -m "feat: your message"
-   ```
-6. Push to your fork:
-   ```bash
-   git push origin <your-branch-name>
-   ```
-7. Open a Pull Request and clearly describe what you changed and why. Link related issues (e.g., “Fixes #123”).
-
-<!-- <img src="https://img.shields.io/github/:variant/:user/:repo?style=flat-square&labelColor=orange" alt="Open a Pull Request" /> -->
-
----
-
-## Guidelines for Pull Request
-
-- Avoid PRs that are automated/scripted or plagiarized from someone else’s work.
-- Don’t spam; keep each PR focused and meaningful.
-- The project maintainer’s decision on PR validity is final.
-- For more, see our [Contributing Guidelines](contributing.md) and the Hacktoberfest [participation rules](https://hacktoberfest.com/participation).
-
----
-
-## Authors
-
-**Authors:** <!-- [author1's name](link), [author2's name](link) -->  
-**Contributors:** <!-- Generate contributors list using https://contributors-img.web.app/preview -->
-
----
-
-## Community & Conduct
-
-By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Please keep PRs focused, add/adjust
+tests under `tests/`, and run `uv run pytest tests/ -q` before opening one.
+By participating you agree to our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 
 <div align="center">
-  
-🤍 Crafted with love by <a href="https://acmvit.in/" target="_blank">ACM‑VIT</a>
 
-![Footer GIF](https://raw.githubusercontent.com/ACM-VIT/.github/master/profile/domains.gif)
+🤍 Crafted with love by <a href="https://acmvit.in/" target="_blank">ACM‑VIT</a>
 
 </div>
