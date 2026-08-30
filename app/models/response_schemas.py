@@ -33,10 +33,28 @@ class AnalyzeResponse(BaseModel):
     model_used: str
 
 
+class ClassifyApproachResponse(BaseModel):
+    """Approach-classification response returned to the backend.
+
+    The backend reads matched_approach / used_* / confidence; on any degrade the
+    service returns confidence 0.0 so the backend keeps structural-weights-only
+    crediting (no approach gating).
+    """
+
+    submission_id: str
+    matched_approach: str
+    used_topics: list[str] = Field(default_factory=list)
+    used_data_structures: list[str] = Field(default_factory=list)
+    used_patterns: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    processing_status: ProcessingStatus
+    processing_ms: int = Field(ge=0)
+    model_used: str
+
+
 class ErrorResponse(BaseModel):
     """Stable error envelope for validation and unexpected server errors."""
 
     error_code: str
     message: str
     submission_id: str | None = None
-

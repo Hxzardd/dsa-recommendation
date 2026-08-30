@@ -1,7 +1,7 @@
 """Request schemas for the AI analysis service."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -59,6 +59,42 @@ class AnalyzeRequest(BaseModel):
     execution_time_ms: int = Field(ge=0)
     memory_kb: int = Field(ge=0)
     submitted_at: datetime
+
+    @field_validator("source_code")
+    @classmethod
+    def source_code_must_be_safe_size(cls, value: str) -> str:
+        """Ensure submitted source is present and within configured limits."""
+
+        if not value.strip():
+            msg = "source_code must not be empty"
+            raise ValueError(msg)
+
+        max_chars = get_settings().max_source_code_chars
+        if len(value) > max_chars:
+            msg = f"source_code exceeds maximum length of {max_chars} characters"
+            raise ValueError(msg)
+
+        return value
+
+
+class ClassifyApproachRequest(BaseModel):
+    """Request payload for POST /classify-approach.
+
+    Sent by the backend's integrations/approach-detection to determine which of
+    a problem's candidate topics/patterns the submission actually used, so
+    mastery credit can be gated on the real approach.
+    """
+
+    submission_id: str
+    problem_id: str
+    language: str
+    source_code: str
+    problem_statement: str = ""
+    candidate_topics: list[str] = Field(default_factory=list)
+    candidate_patterns: list[str] = Field(default_factory=list)
+    data_structure_tags: list[str] = Field(default_factory=list)
+    solution_signature: dict[str, Any] | None = None
+    common_wrong_approaches: list[dict[str, Any]] = Field(default_factory=list)
 
     @field_validator("source_code")
     @classmethod
