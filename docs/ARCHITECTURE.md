@@ -77,6 +77,23 @@ lives under `pipeline/`:
   and persisted to Neo4j. `/update` projects its computed BKT/HLR results into
   this graph (ML-internal state, distinct from the backend's mastery tables).
 
+### Problem-topic graph artifacts (weighted)
+`scripts/regenerate_graph_artifacts.py` builds the offline graph from the
+curated `data/source-target.txt` (72-canonical-tag problem→topic mapping) + the
+manifest, emitting `data/*_normalized.json` and `question-graph/data/*.json`.
+Each problem-topic edge carries a **`role`** (`domain` = the substrate any
+solution touches, e.g. `array`; `optional` = a technique/auxiliary structure a
+solution chooses, e.g. `hash_map`) and a structural **`weight`**. This is the
+same taxonomy the backend uses to gate mastery credit (so a brute-force Two Sum
+doesn't credit `hash_map`) — kept in sync with the backend's
+`scripts/seed-problemtopic-weights.ts` `DOMAIN_TAGS`. `topic_topic_edges` carry
+co-occurrence (`jaccard`). Regenerate with:
+```
+python scripts/regenerate_graph_artifacts.py
+```
+`question-graph/src/graph_builder.py` assembles these into the GraphML the RGCN
+pipeline consumes; the edge `role`/`weight`/`is_primary_topic` flow through.
+
 ## Data stores
 
 | Store | Role | Required for |

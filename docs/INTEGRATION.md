@@ -58,6 +58,11 @@ See [API.md](API.md#post-update--score--bkt--hlr-stateless) for the full
   down-weighted by BKT, not rejected.
 - `topicId` is opaque and round-trips (the backend sends its own `topic.id`).
 - `telemetry` is optional and neutral-safe; the retry runner omits it.
+- each `problemTopics[]` carries a **`weight`** (0..1) = structural relevance ×
+  approach-usage. The backend computes it from `problem_topic.weight`/`role`
+  and an LLM approach classification, so a topic the submission didn't actually
+  use (e.g. `hash_map` on a brute-force Two Sum) arrives with weight 0 and BKT
+  doesn't move it. `update_bkt` already scales its delta by this weight.
 
 ## XP policy (backend-owned)
 
