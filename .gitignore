@@ -20,19 +20,24 @@ qdrant_storage_v2/
 # ==========================
 # DSA Engine generated artifacts
 # ==========================
+# Legacy scratch docs from earlier contributors (not part of docs/)
 POSTMAN_GUIDE.md
+API_ENDPOINTS.md
+ARCHITECTURE_QA.md
+BACKEND_ML_INTEGRATION.md
+STATEUPDATESERVICE_DECISION.md
+pid_tags_scratch.json
 
- API_ENDPOINTS.md 
- ARCHITECTURE_QA.md 
- BACKEND_ML_INTEGRATION.md 
- STATEUPDATESERVICE_DECISION.md
- pid_tags_scratch.json
+# Large generated data artifacts (kept on disk, not in git)
+1000_manifest_final_slugs_filled.json
+real_difficulty_map.json
+lightgbm_dataset.jsonl
+
 # Vector pool outputs
 data/vector_pool/
 vector_pool/
 .claude
 .postman
-POSTMAN_GUIDE.md
 
 # RGCN outputs
 pipeline/graphs/rgcn_artifacts/

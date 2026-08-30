@@ -56,6 +56,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Resolve the repo root (dir holding pyproject.toml) so `import db_env` works
+# when this script is invoked from scripts/. Data paths below stay relative to
+# the CWD -- run this from the repo root.
+for _p in Path(__file__).resolve().parents:
+    if (_p / "pyproject.toml").exists():
+        sys.path.insert(0, str(_p))
+        break
+
 import db_env   # the ONE place .env gets loaded -- see db_env.py
 
 QDRANT_URL     = db_env.QDRANT_URL

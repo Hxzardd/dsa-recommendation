@@ -24,8 +24,18 @@ Usage:
 
 import argparse
 import secrets
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+# Allow running from anywhere (e.g. `python scripts/seed_test_session.py`):
+# add the repo root (the dir holding pyproject.toml) to sys.path so the
+# `database` package resolves regardless of this file's location.
+for _p in Path(__file__).resolve().parents:
+    if (_p / "pyproject.toml").exists():
+        sys.path.insert(0, str(_p))
+        break
 
 from database.postgres.db import get_connection, release_connection
 
