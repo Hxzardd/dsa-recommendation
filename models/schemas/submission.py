@@ -22,6 +22,26 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
+class Telemetry(BaseModel):
+    """Behavioural editor telemetry for the submission, forwarded by the
+    backend so ML (not the backend) owns the displayed score formulation --
+    see pipeline/recommender/scoring.py. Every field is optional and
+    neutral-safe: an absent signal yields a neutral component, never a
+    penalty, so a caller with no telemetry (e.g. the retry runner) still
+    round-trips cleanly."""
+    majorRewriteCount: Optional[float] = None
+    backspaceCount: Optional[float] = None
+    totalKeystrokes: Optional[float] = None
+    sessionDurationSeconds: Optional[float] = None
+    hintsUsed: Optional[float] = None
+    firstHintOpenedAtSeconds: Optional[float] = None
+    edgeCasesPassed: Optional[float] = None
+    totalEdgeCases: Optional[float] = None
+    runtimePercentile: Optional[float] = None
+    memoryPercentile: Optional[float] = None
+    recentSessionScores: List[float] = []
+
+
 class TopicState(BaseModel):
     """Current per-topic state sent by backend for this problem's topics."""
     topicId: str
@@ -68,6 +88,10 @@ class Submission(BaseModel):
     # by ML. Backend knows which topics this problem covers and sends the
     # user's current state for each. ML returns updatedTopics with new values.
     problemTopics: List[TopicState] = []
+
+    # Behavioural editor telemetry -- ML formulates the submission score from
+    # these (see scoring.py). Optional so older callers still validate.
+    telemetry: Optional[Telemetry] = None
 
     class Config:
         json_schema_extra = {

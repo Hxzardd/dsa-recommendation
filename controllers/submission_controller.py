@@ -2,9 +2,8 @@ import logging
 
 from pipeline.recommender.bkt import process_submission
 from pipeline.recommender.hlr import process_hlr
-from database.postgres.db import (
-    save_user_mastery_live, save_user_hlr, mark_recommendation_attempted,
-)
+from pipeline.recommender.scoring import compute_submission_score
+from database.postgres.db import mark_recommendation_attempted
 
 log = logging.getLogger(__name__)
 
@@ -64,32 +63,34 @@ def _merge_to_updated_topics(updated_mastery, updated_hlr):
 
 def handle_update(submission):
     """
-    Computes AND persists the updated BKT/HLR state -- ML is the single
-    source of truth for mastery (Bayesian P(L) with proximity dampening
-    isn't reproducible by a simple rolling average, so a caller falling
-    back to its own math during an outage would silently corrupt the
-    mastery model's invariants -- see save_user_mastery/save_user_hlr,
-    which translate the ML topic slug to the backend's topic.id via
-    database.postgres.topic_taxonomy before writing).
+    Stateless calculator: computes the submission score, the updated BKT
+    mastery and the updated HLR state, and RETURNS them for the backend to
+    persist. ML is the single source of truth for these numbers (Bayesian
+    P(L) with proximity dampening isn't reproducible by a simple rolling
+    average, so a caller inventing its own math during an outage would
+    silently corrupt the model's invariants) but it does NOT write the
+    backend-owned `user_topic_mastery` / `user_hlr_state` tables itself --
+    the backend owns all mastery persistence (see the backend's
+    integrations/ml/apply-topic-mastery.ts). This keeps a single writer for
+    those tables and matches the documented /update contract.
 
-    Persistence failures propagate (not swallowed) so a service caller
-    (e.g. the backend's judge0 submission webhook, see middlewares/auth.py's
-    ML_SERVICE_TOKEN) sees a real error and can retry/queue the submission,
-    rather than getting a 200 that silently didn't save anything.
+    ML still maintains its OWN recommendation state below (the feedback-loop
+    marker and the graph projection into Redis/Neo4j); those are ML-internal
+    stores, not the backend's mastery tables.
     """
+    submission_dict = submission.model_dump()
     current_mastery, current_hlr = _split_current_state(submission)
 
     updated_mastery, mastered_topics, bkt_results = process_submission(
-        submission.model_dump(), current_mastery
+        submission_dict, current_mastery
     )
     updated_hlr, hlr_results = process_hlr(
-        submission.model_dump(), current_hlr
+        submission_dict, current_hlr
     )
 
-    if updated_mastery:
-        save_user_mastery_live(submission.userId, updated_mastery)
-    if updated_hlr:
-        save_user_hlr(submission.userId, updated_hlr)
+    # Score formulation from the forwarded telemetry (see scoring.py). Uses
+    # the prior average topic mastery as the smoothing baseline.
+    score = compute_submission_score(submission_dict)
 
     # Feedback loop, write half: mark this problem's most recent
     # not-yet-attempted recommendation_log row as attempted, so the ranker
@@ -119,5 +120,11 @@ def handle_update(submission):
         "problemId": submission.problemId,
         "updatedTopics": updated_topics,
         "masteredTopics": mastered_topics,
-        "results": {"bkt": bkt_results, "hlr": hlr_results},
+        # ML-owned score formulation -- `score` is 0..1, `normalisedScore` is
+        # 0..100. The backend persists these as the submission's finalScore /
+        # normalisedScore (falling back to its local calculateScore only when
+        # this service is unreachable).
+        "score": score["finalScore"],
+        "normalisedScore": score["normalisedScore"],
+        "results": {"bkt": bkt_results, "hlr": hlr_results, "score": score},
     }

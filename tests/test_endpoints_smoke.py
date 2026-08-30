@@ -358,17 +358,17 @@ class TestUpdateEndpoint(_EndpointCase):
 
     @contextlib.contextmanager
     def _update_client(self):
-        """Captures what /update persists so we can assert on it."""
-        self.saved_mastery, self.saved_hlr, self.attempted = {}, {}, []
+        """/update is a stateless calculator: it computes score + BKT + HLR and
+        RETURNS them for the backend to persist; it never writes the backend's
+        mastery tables itself. We only stub the ML-internal side effects (the
+        feedback-loop marker and the graph projection) and assert on the
+        response body."""
+        self.attempted = []
         state_svc = MagicMock()
         with contextlib.ExitStack() as st:
             ec = st.enter_context
             ec(patch.object(auth_mod, "verify_session_token",
                             side_effect=lambda token: token))
-            ec(patch.object(sub_ctl, "save_user_mastery_live",
-                            side_effect=lambda uid, m: self.saved_mastery.update(m)))
-            ec(patch.object(sub_ctl, "save_user_hlr",
-                            side_effect=lambda uid, h: self.saved_hlr.update(h)))
             ec(patch.object(sub_ctl, "mark_recommendation_attempted",
                             side_effect=lambda uid, slug: self.attempted.append(slug)))
             ec(patch.object(sub_ctl, "_get_state_update_service",
@@ -426,13 +426,42 @@ class TestUpdateEndpoint(_EndpointCase):
                 t["updatedMastery"], 0.40 if t["topicId"] == "array" else 0.20,
                 "a failed attempt must not be credited as learning")
 
-    def test_update_persists_mastery_and_hlr(self):
+    def test_update_returns_mastery_and_hlr_for_backend_to_persist(self):
+        """Stateless contract: /update must RETURN the new mastery + HLR per
+        topic so the backend can persist them -- it no longer writes them."""
         with self._update_client() as c:
-            self._post(c)
-        self.assertTrue(self.saved_mastery, "mastery was never persisted")
-        self.assertTrue(self.saved_hlr, "HLR was never persisted")
-        self.assertIn("array", self.saved_mastery)
-        self.assertIn("array", self.saved_hlr)
+            body = self._post(c).json()
+        by_topic = {t["topicId"]: t for t in body["updatedTopics"]}
+        self.assertIn("array", by_topic)
+        self.assertIsNotNone(by_topic["array"]["updatedMastery"],
+                             "response carries no mastery for the backend")
+        self.assertIsNotNone(by_topic["array"]["updatedHlr"],
+                             "response carries no HLR for the backend")
+
+    def test_update_returns_an_ml_owned_score(self):
+        """ML owns the score formulation from telemetry -- the response must
+        carry `score` (0..1) and `normalisedScore` (0..100)."""
+        body = dict(self.SUBMISSION)
+        body["telemetry"] = {
+            "majorRewriteCount": 0,
+            "backspaceCount": 2,
+            "totalKeystrokes": 200,
+            "sessionDurationSeconds": 120,
+            "hintsUsed": 0,
+            "firstHintOpenedAtSeconds": None,
+            "edgeCasesPassed": 10,
+            "totalEdgeCases": 10,
+            "runtimePercentile": 0.2,
+            "memoryPercentile": 0.3,
+            "recentSessionScores": [],
+        }
+        with self._update_client() as c:
+            out = self._post(c, body).json()
+        self.assertIn("score", out)
+        self.assertIn("normalisedScore", out)
+        self.assertGreaterEqual(out["score"], 0.0)
+        self.assertLessEqual(out["score"], 1.0)
+        self.assertEqual(out["normalisedScore"], round(out["score"] * 100))
 
     def test_update_closes_the_recommendation_feedback_loop(self):
         with self._update_client() as c:
@@ -468,8 +497,6 @@ class TestUpdateEndpoint(_EndpointCase):
         with contextlib.ExitStack() as st:
             ec = st.enter_context
             ec(patch.object(auth_mod, "_ML_SERVICE_TOKEN", "svc-secret"))
-            ec(patch.object(sub_ctl, "save_user_mastery_live"))
-            ec(patch.object(sub_ctl, "save_user_hlr"))
             ec(patch.object(sub_ctl, "mark_recommendation_attempted"))
             ec(patch.object(sub_ctl, "_get_state_update_service",
                             return_value=MagicMock()))
