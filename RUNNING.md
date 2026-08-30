@@ -82,6 +82,25 @@ uvicorn main:app --reload --port 8000
 - Swagger UI: `http://localhost:8000/docs`
 - OpenAPI schema: `http://localhost:8000/openapi.json`
 
+### Full stack (backend + ML + AI)
+
+This ML service runs standalone. For the complete submission flow, also run the
+**AI analysis service** (the `AI` branch of this repo — "KNode AI Code
+Analysis") on a separate port and the backend:
+
+```bash
+# ML  (this branch)         :8000
+uvicorn main:app --port 8000
+# AI  (git worktree of AI branch) :8099   — see that branch's README
+uv run uvicorn app.main:app --port 8099
+# backend (dsa-website)     :3000
+npm run dev
+```
+
+The AI service is optional for the ML endpoints; when it's absent the backend
+credits mastery with structural weights only (no approach gating). See
+[docs/INTEGRATION.md](docs/INTEGRATION.md).
+
 ## 5. Run the test suite
 
 ```bash

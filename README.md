@@ -35,10 +35,22 @@ backend (they share one Postgres database). It has two jobs:
    embeddings (Qdrant) and a per-user concept graph (Neo4j/Redis).
 
 ```
-submit → backend → POST /update (telemetry + current mastery)
+submit → backend → AI /classify-approach (which topics were used)
+                 → ML  /update (telemetry + current mastery + per-topic weights)
                  → score + BKT + HLR  ←  this service
                  → backend persists mastery / XP / reviews
 ```
+
+### Part of a three-service system
+
+| Service | Repo / branch | Role |
+|---|---|---|
+| Backend | `dsa-website` (`personal`) | Next.js app + API; owns all persistence |
+| **ML engine** | `dsa-recommendation` (`personalML`) — *this* | score + BKT + HLR + recommendations |
+| AI analysis | `dsa-recommendation` (`AI` branch) | vLLM `/analyze` + `/classify-approach` |
+
+They share one Postgres and degrade independently. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
 
 ## Documentation
 

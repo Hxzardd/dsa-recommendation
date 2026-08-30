@@ -64,6 +64,24 @@ See [API.md](API.md#post-update--score--bkt--hlr-stateless) for the full
   use (e.g. `hash_map` on a brute-force Two Sum) arrives with weight 0 and BKT
   doesn't move it. `update_bkt` already scales its delta by this weight.
 
+## Approach classification (AI service)
+
+The per-topic `weight` above is gated by the **AI service** ("KNode AI Code
+Analysis", the `AI` branch of this repo). The backend's
+`integrations/approach-detection` calls the AI `POST /classify-approach` with the
+submission's source code and the problem's candidate topics/patterns; the AI
+service (vLLM) returns which topics / data-structures / patterns the code
+actually used, plus a `confidence`. The backend combines that with the
+structural `problem_topic.weight` / `role` to produce the `weight` sent to
+`/update`.
+
+Degradation is layered: if the AI service or its vLLM backend is unreachable it
+returns `confidence: 0`, and the backend falls back to structural-weights-only
+crediting — mastery still updates, just without approach gating. The AI service
+and this ML service run independently (different ports/branches); neither
+blocks the other. See the AI service's `docs/` and `README.md` on the `AI`
+branch for its own contract.
+
 ## XP policy (backend-owned)
 
 - **First accepted solve** → full XP.

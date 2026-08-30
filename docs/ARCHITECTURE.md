@@ -7,6 +7,24 @@ It shares a Postgres database with the backend ([`dsa-website`](../README.md)),
 but the **backend owns all persistence of user mastery**; this service returns
 numbers, it does not write the backend's mastery tables.
 
+## System context — three services
+
+Knode is three cooperating services sharing one Postgres:
+
+| Service | Repo / branch | Role |
+|---|---|---|
+| **Backend** | `dsa-website` (`personal`) | Next.js app + API. Owns all persistence (mastery, XP, submissions) and orchestrates the submission hook. |
+| **ML engine** | `dsa-recommendation` (`personalML`) — *this* | Stateless score + BKT + HLR calculator, plus the recommendation pipeline. |
+| **AI analysis** | `dsa-recommendation` (`AI` branch) — "KNode AI Code Analysis" | vLLM-backed `POST /analyze` (mentor feedback on failed submissions) and `POST /classify-approach` (which topics/techniques a submission actually used). |
+
+On a submission the backend first asks the **AI service** to classify the
+approach, then calls this ML service's `/update` with per-topic `weight`s derived
+from that classification — so mastery credit reflects the technique the learner
+actually used (a brute-force Two Sum does not credit `hash_map`). All three
+degrade independently: if the AI service or vLLM is down, crediting falls back to
+structural weights; if this ML service is down, the backend defers mastery for
+retry. See [INTEGRATION.md](INTEGRATION.md).
+
 ```
                          ┌──────────────────────────────────────────┐
    learner submits code  │                dsa-website               │
