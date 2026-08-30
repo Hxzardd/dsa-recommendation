@@ -81,7 +81,9 @@ vLLM-only (`app/config/settings.py`): `VLLM_BASE_URL`, `VLLM_MODEL`,
 `VLLM_API_KEY` (optional), `LLM_TIMEOUT_SECONDS`, plus `SERVICE_API_KEY`
 (optional shared bearer for backend→AI), `RULE_ENGINE_ENABLED`,
 `MAX_CONCEPT_GAPS`, `MAX_USED_ITEMS`, prompt/source char budgets. See
-[.env.example](../.env.example).
+[.env.example](../.env.example). For choosing and running an LLM backend
+(Ollama for dev, vLLM in WSL2, hosted vLLM for prod, VRAM sizing) see
+[LLM_SETUP.md](LLM_SETUP.md).
 
 ## Module map
 

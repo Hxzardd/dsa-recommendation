@@ -62,6 +62,7 @@ Modules: `app/orchestrator` (analyze, classify) · `app/llm` (vLLM client + fake
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Pipeline, deep orchestrator, LLM seam, degradation, module map |
 | [docs/API.md](docs/API.md) | `/analyze` + `/classify-approach` schemas, auth, status codes |
+| [docs/LLM_SETUP.md](docs/LLM_SETUP.md) | LLM backends: Ollama (dev), vLLM in WSL2, hosted vLLM (prod), VRAM sizing |
 | [.env.example](.env.example) | All configuration (vLLM, auth, budgets) |
 
 ## Quick start
@@ -74,6 +75,9 @@ cp .env.example .env                       # set VLLM_BASE_URL / VLLM_MODEL
 uv run uvicorn app.main:app --port 8099    # Swagger at /docs
 uv run pytest -q                           # tests run offline (no vLLM needed)
 ```
+
+For the LLM backend (Ollama for dev, vLLM in WSL2, or a hosted vLLM for prod),
+see [docs/LLM_SETUP.md](docs/LLM_SETUP.md).
 
 The full test suite uses an in-memory fake LLM, so it passes with no vLLM
 running. Point `VLLM_BASE_URL` at a live server to get real analysis output.
