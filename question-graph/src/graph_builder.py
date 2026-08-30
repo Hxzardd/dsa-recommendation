@@ -92,6 +92,10 @@ def build_graph(problems, topics, problem_topic_edges, topic_topic_edges):
                 topic_node,
                 edge_type="has_topic",
                 is_primary_topic=clean_value(e.get("is_primary_topic")),
+                # Topic relevance carried through from regenerate_graph_artifacts:
+                # role='domain'|'optional', weight 0..1 (see that script).
+                role=clean_value(e.get("role")),
+                weight=clean_value(e.get("weight", 1.0)),
             )
 
     for e in topic_topic_edges:

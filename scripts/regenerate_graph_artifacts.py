@@ -72,6 +72,43 @@ out_qg_tt_edges     = QG_DATA / "topic_topic_edges.json"
 
 
 # ---------------------------------------------------------------------------
+# Topic relevance: role + weight
+# ---------------------------------------------------------------------------
+# A problem credits mastery to every topic it's tagged with. To stop an
+# approach the learner didn't use from being credited (e.g. solving Two Sum by
+# brute force must not credit hash_map), each problem-topic edge carries a
+# `role` and a structural `weight`. This MUST stay in sync with the backend's
+# scripts/seed-problemtopic-weights.ts DOMAIN_TAGS set (the backend owns the
+# richer per-problem weights for the live mastery path; these graph edges carry
+# the same taxonomy so the recommendation graph and the mastery model agree on
+# which topics are the substrate vs an optional technique).
+#
+# role='domain'  — the substrate any solution is inherently ON (input data
+#                  types + broad areas). Still credited (floored) when not the
+#                  starring technique.
+# role='optional'— a technique/algorithm/auxiliary structure a solution CHOOSES
+#                  (hash_map, heap, two_pointers, binary_search, dp, …). Credited
+#                  only when actually used.
+DOMAIN_TAGS = {
+    "array", "string", "matrix", "linked_list", "tree", "binary_tree",
+    "binary_search_tree", "graph", "math", "number_theory", "geometry",
+    "combinatorics", "probability", "database", "design", "concurrency",
+    "shell", "data_stream",
+}
+
+DOMAIN_WEIGHT = 1.0
+OPTIONAL_WEIGHT = 0.7
+
+
+def topic_role(topic: str) -> str:
+    return "domain" if topic in DOMAIN_TAGS else "optional"
+
+
+def topic_weight(role: str) -> float:
+    return DOMAIN_WEIGHT if role == "domain" else OPTIONAL_WEIGHT
+
+
+# ---------------------------------------------------------------------------
 # Core generation
 # ---------------------------------------------------------------------------
 
@@ -185,6 +222,14 @@ def main(source_target: Path, manifest_path: Path):
     edges = load_source_target(source_target)
     manifest = load_manifest(manifest_path)
 
+    # Tag every problem-topic edge with its role + structural weight so both the
+    # normalized data file and the question-graph carry topic relevance.
+    for e in edges:
+        role = topic_role(e["target"])
+        e["role"] = role
+        e["weight"] = topic_weight(role)
+        e["is_primary_topic"] = role == "domain"
+
     topics_set = sorted({e["target"] for e in edges})
     slugs_set  = sorted({e["source"] for e in edges})
     print(f"      {len(edges)} edges | {len(slugs_set)} problems | {len(topics_set)} topics")
@@ -236,6 +281,10 @@ def main(source_target: Path, manifest_path: Path):
             "topic_slug": t,
             "topic_id":   t,
             "topic_name": t.replace("_", " ").title(),
+            # role/is_root_topic: substrate domains are "root" topics; techniques
+            # and auxiliary structures are not (graph_builder reads is_root_topic).
+            "role":          topic_role(t),
+            "is_root_topic": topic_role(t) == "domain",
         }
         for t in topics_set
     ]
@@ -245,8 +294,11 @@ def main(source_target: Path, manifest_path: Path):
     slug_to_pid = {slug: manifest.get(slug, {}).get("problem_id", slug) for slug in slugs_set}
     qg_pt_edges = [
         {
-            "problem_id": slug_to_pid[e["source"]],
-            "topic_id":   e["target"],
+            "problem_id":       slug_to_pid[e["source"]],
+            "topic_id":         e["target"],
+            "role":             e["role"],
+            "weight":           e["weight"],
+            "is_primary_topic": e["is_primary_topic"],
         }
         for e in edges
     ]

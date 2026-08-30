@@ -2,271 +2,379 @@
   {
     "topic_slug": "array",
     "topic_id": "array",
-    "topic_name": "Array"
+    "topic_name": "Array",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "backtracking",
     "topic_id": "backtracking",
-    "topic_name": "Backtracking"
+    "topic_name": "Backtracking",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "bfs",
     "topic_id": "bfs",
-    "topic_name": "Bfs"
+    "topic_name": "Bfs",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "binary_search",
     "topic_id": "binary_search",
-    "topic_name": "Binary Search"
+    "topic_name": "Binary Search",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "binary_tree",
     "topic_id": "binary_tree",
-    "topic_name": "Binary Tree"
+    "topic_name": "Binary Tree",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "bit_manipulation",
     "topic_id": "bit_manipulation",
-    "topic_name": "Bit Manipulation"
+    "topic_name": "Bit Manipulation",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "bitmask_dp",
     "topic_id": "bitmask_dp",
-    "topic_name": "Bitmask Dp"
+    "topic_name": "Bitmask Dp",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "combinatorics",
     "topic_id": "combinatorics",
-    "topic_name": "Combinatorics"
+    "topic_name": "Combinatorics",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "connected_components",
     "topic_id": "connected_components",
-    "topic_name": "Connected Components"
+    "topic_name": "Connected Components",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "design",
     "topic_id": "design",
-    "topic_name": "Design"
+    "topic_name": "Design",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "dfs",
     "topic_id": "dfs",
-    "topic_name": "Dfs"
+    "topic_name": "Dfs",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "digit_dp",
     "topic_id": "digit_dp",
-    "topic_name": "Digit Dp"
+    "topic_name": "Digit Dp",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "dijkstra",
     "topic_id": "dijkstra",
-    "topic_name": "Dijkstra"
+    "topic_name": "Dijkstra",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "divide_and_conquer",
     "topic_id": "divide_and_conquer",
-    "topic_name": "Divide And Conquer"
+    "topic_name": "Divide And Conquer",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "dynamic_programming",
     "topic_id": "dynamic_programming",
-    "topic_name": "Dynamic Programming"
+    "topic_name": "Dynamic Programming",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "fast_slow_pointers",
     "topic_id": "fast_slow_pointers",
-    "topic_name": "Fast Slow Pointers"
+    "topic_name": "Fast Slow Pointers",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "floyd_warshall",
     "topic_id": "floyd_warshall",
-    "topic_name": "Floyd Warshall"
+    "topic_name": "Floyd Warshall",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "graph",
     "topic_id": "graph",
-    "topic_name": "Graph"
+    "topic_name": "Graph",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "greedy",
     "topic_id": "greedy",
-    "topic_name": "Greedy"
+    "topic_name": "Greedy",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "hash_map",
     "topic_id": "hash_map",
-    "topic_name": "Hash Map"
+    "topic_name": "Hash Map",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "heap",
     "topic_id": "heap",
-    "topic_name": "Heap"
+    "topic_name": "Heap",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "in_place_modification",
     "topic_id": "in_place_modification",
-    "topic_name": "In Place Modification"
+    "topic_name": "In Place Modification",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "interval_dp",
     "topic_id": "interval_dp",
-    "topic_name": "Interval Dp"
+    "topic_name": "Interval Dp",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "kadane",
     "topic_id": "kadane",
-    "topic_name": "Kadane"
+    "topic_name": "Kadane",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "kmp",
     "topic_id": "kmp",
-    "topic_name": "Kmp"
+    "topic_name": "Kmp",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "knapsack_dp",
     "topic_id": "knapsack_dp",
-    "topic_name": "Knapsack Dp"
+    "topic_name": "Knapsack Dp",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "linked_list",
     "topic_id": "linked_list",
-    "topic_name": "Linked List"
+    "topic_name": "Linked List",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "math",
     "topic_id": "math",
-    "topic_name": "Math"
+    "topic_name": "Math",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "matrix",
     "topic_id": "matrix",
-    "topic_name": "Matrix"
+    "topic_name": "Matrix",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "merge_intervals",
     "topic_id": "merge_intervals",
-    "topic_name": "Merge Intervals"
+    "topic_name": "Merge Intervals",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "minimum_spanning_tree",
     "topic_id": "minimum_spanning_tree",
-    "topic_name": "Minimum Spanning Tree"
+    "topic_name": "Minimum Spanning Tree",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "monotonic_queue",
     "topic_id": "monotonic_queue",
-    "topic_name": "Monotonic Queue"
+    "topic_name": "Monotonic Queue",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "monotonic_stack",
     "topic_id": "monotonic_stack",
-    "topic_name": "Monotonic Stack"
+    "topic_name": "Monotonic Stack",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "number_theory",
     "topic_id": "number_theory",
-    "topic_name": "Number Theory"
+    "topic_name": "Number Theory",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "prefix_sum",
     "topic_id": "prefix_sum",
-    "topic_name": "Prefix Sum"
+    "topic_name": "Prefix Sum",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "prefix_xor",
     "topic_id": "prefix_xor",
-    "topic_name": "Prefix Xor"
+    "topic_name": "Prefix Xor",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "queue",
     "topic_id": "queue",
-    "topic_name": "Queue"
+    "topic_name": "Queue",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "range_query",
     "topic_id": "range_query",
-    "topic_name": "Range Query"
+    "topic_name": "Range Query",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "recursion",
     "topic_id": "recursion",
-    "topic_name": "Recursion"
+    "topic_name": "Recursion",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "sequence_dp",
     "topic_id": "sequence_dp",
-    "topic_name": "Sequence Dp"
+    "topic_name": "Sequence Dp",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "shortest_path",
     "topic_id": "shortest_path",
-    "topic_name": "Shortest Path"
+    "topic_name": "Shortest Path",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "simulation",
     "topic_id": "simulation",
-    "topic_name": "Simulation"
+    "topic_name": "Simulation",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "sliding_window",
     "topic_id": "sliding_window",
-    "topic_name": "Sliding Window"
+    "topic_name": "Sliding Window",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "sorting",
     "topic_id": "sorting",
-    "topic_name": "Sorting"
+    "topic_name": "Sorting",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "stack",
     "topic_id": "stack",
-    "topic_name": "Stack"
+    "topic_name": "Stack",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "state_machine_dp",
     "topic_id": "state_machine_dp",
-    "topic_name": "State Machine Dp"
+    "topic_name": "State Machine Dp",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "string",
     "topic_id": "string",
-    "topic_name": "String"
+    "topic_name": "String",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "string_matching",
     "topic_id": "string_matching",
-    "topic_name": "String Matching"
+    "topic_name": "String Matching",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "topological_sort",
     "topic_id": "topological_sort",
-    "topic_name": "Topological Sort"
+    "topic_name": "Topological Sort",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "tree",
     "topic_id": "tree",
-    "topic_name": "Tree"
+    "topic_name": "Tree",
+    "role": "domain",
+    "is_root_topic": true
   },
   {
     "topic_slug": "tree_dp",
     "topic_id": "tree_dp",
-    "topic_name": "Tree Dp"
+    "topic_name": "Tree Dp",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "trie",
     "topic_id": "trie",
-    "topic_name": "Trie"
+    "topic_name": "Trie",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "two_pointers",
     "topic_id": "two_pointers",
-    "topic_name": "Two Pointers"
+    "topic_name": "Two Pointers",
+    "role": "optional",
+    "is_root_topic": false
   },
   {
     "topic_slug": "union_find",
     "topic_id": "union_find",
-    "topic_name": "Union Find"
+    "topic_name": "Union Find",
+    "role": "optional",
+    "is_root_topic": false
   }
 ]
